@@ -14,13 +14,22 @@ function downloadURI(uri, name) {
   document.body.removeChild(link);
 }
 
-const URLImage = ({ image }) => {
+const URLImage = ({ image, setImage }) => {
   const [img] = useImage(image.src);
   return (
     <Image
       image={img}
       x={image.x}
       y={image.y}
+      draggable={true}
+      onDragEnd={(e) => {
+        // https://konvajs.org/docs/react/Drag_And_Drop.html
+        setImage({
+          ...image,
+          x: e.target.x(),
+          y: e.target.y(),
+        });
+      }}
       // I will use offset to set origin to the center of the image
       offsetX={img ? img.width / 2 : 0}
       offsetY={img ? img.height / 2 : 0}
@@ -196,7 +205,13 @@ export default function Home() {
         {images.map((image, i) => {
           return (
             <Layer key={i}>
-              <URLImage image={image} />
+              <URLImage
+                image={image}
+                setImage={(imageProps) => {
+                  images[i] = imageProps;
+                  setImages(images);
+                }}
+              />
             </Layer>
           );
         })}
