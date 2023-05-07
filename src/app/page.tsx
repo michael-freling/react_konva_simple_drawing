@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Stage, Layer, Line, Text } from "react-konva";
+import { Stage, Layer, Line, Image } from "react-konva";
+import useImage from "use-image";
 
 // function from https://stackoverflow.com/a/15832662/512042
 function downloadURI(uri, name) {
@@ -13,6 +14,20 @@ function downloadURI(uri, name) {
   document.body.removeChild(link);
 }
 
+const URLImage = ({ image }) => {
+  const [img] = useImage(image.src);
+  return (
+    <Image
+      image={img}
+      x={image.x}
+      y={image.y}
+      // I will use offset to set origin to the center of the image
+      offsetX={img ? img.width / 2 : 0}
+      offsetY={img ? img.height / 2 : 0}
+    />
+  );
+};
+
 export default function Home() {
   const [tool, setTool] = React.useState("pen");
   const [history, setHistory] = React.useState<
@@ -22,9 +37,15 @@ export default function Home() {
     }[]
   >([]);
   const isDrawing = React.useRef(false);
-  // undo/redo
+  // undo/redo: https://konvajs.org/docs/react/Undo-Redo.html
   const [historyStep, setHistoryStep] = React.useState(0);
   const stageRef = React.useRef(null);
+
+  // Import
+  // https://konvajs.org/docs/react/Images.html
+  // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
+  const inputFile = React.useRef<HTMLInputElement | null>(null);
+  const [images, setImages] = React.useState([]);
 
   // https://konvajs.org/docs/react/Undo-Redo.html
   const handleUndo = () => {
@@ -79,13 +100,53 @@ export default function Home() {
     downloadURI(uri, "stage.png");
   };
 
+  const handleImport = () => {
+    inputFile.current.click();
+  };
+
+  const handleFiles = (files) => {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      if (!file.type.startsWith("image/")) {
+        continue;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        console.log(e.target.result);
+        setImages([
+          ...images,
+          {
+            src: e.target.result,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <div>
+      <input
+        type="file"
+        id="file"
+        ref={inputFile}
+        style={{ display: "none" }}
+        onChange={(e) => {
+          console.log(e);
+          handleFiles(e.target.files);
+        }}
+      />
+
       <ul style={{ display: "inline-block" }}>
-        <li style={{ display: "inline" }}>
+        <li style={{ display: "inline", padding: 2 }}>
           <button onClick={handleExport}>Export</button>
         </li>
-        <li style={{ display: "inline" }}>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button onClick={handleImport}>Import</button>
+        </li>
+        <li style={{ display: "inline", padding: 2 }}>
           <select
             value={tool}
             onChange={(e) => {
@@ -132,6 +193,13 @@ export default function Home() {
               />
             ))}
         </Layer>
+        {images.map((image, i) => {
+          return (
+            <Layer key={i}>
+              <URLImage image={image} />
+            </Layer>
+          );
+        })}
       </Stage>
     </div>
   );
