@@ -3,6 +3,16 @@
 import React from "react";
 import { Stage, Layer, Line, Text } from "react-konva";
 
+// function from https://stackoverflow.com/a/15832662/512042
+function downloadURI(uri, name) {
+  var link = document.createElement("a");
+  link.download = name;
+  link.href = uri;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 export default function Home() {
   const [tool, setTool] = React.useState("pen");
   const [history, setHistory] = React.useState<
@@ -14,6 +24,7 @@ export default function Home() {
   const isDrawing = React.useRef(false);
   // undo/redo
   const [historyStep, setHistoryStep] = React.useState(0);
+  const stageRef = React.useRef(null);
 
   // https://konvajs.org/docs/react/Undo-Redo.html
   const handleUndo = () => {
@@ -58,9 +69,22 @@ export default function Home() {
     isDrawing.current = false;
   };
 
+  const handleExport = () => {
+    const uri = stageRef.current.toDataURL();
+    console.log(uri);
+    // we also can save uri as file
+    // but in the demo on Konva website it will not work
+    // because of iframe restrictions
+    // but feel free to use it in your apps:
+    downloadURI(uri, "stage.png");
+  };
+
   return (
     <div>
       <ul style={{ display: "inline-block" }}>
+        <li style={{ display: "inline" }}>
+          <button onClick={handleExport}>Export</button>
+        </li>
         <li style={{ display: "inline" }}>
           <select
             value={tool}
@@ -86,6 +110,7 @@ export default function Home() {
         onMouseDown={handleMouseDown}
         onMousemove={handleMouseMove}
         onMouseup={handleMouseUp}
+        ref={stageRef}
       >
         <Layer>
           {history
