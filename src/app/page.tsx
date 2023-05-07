@@ -42,6 +42,7 @@ export default function Home() {
   const [history, setHistory] = React.useState<
     {
       tool: string;
+      color: string;
       points: number[];
     }[]
   >([]);
@@ -55,6 +56,9 @@ export default function Home() {
   // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
   const inputFile = React.useRef<HTMLInputElement | null>(null);
   const [images, setImages] = React.useState([]);
+
+  // color
+  const [color, setColor] = React.useState([]);
 
   // https://konvajs.org/docs/react/Undo-Redo.html
   const handleUndo = () => {
@@ -75,7 +79,14 @@ export default function Home() {
     // https://konvajs.org/docs/react/Free_Drawing.html
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
-    setHistory([...history, { tool, points: [pos.x, pos.y] }]);
+    setHistory([
+      ...history,
+      {
+        tool,
+        color,
+        points: [pos.x, pos.y],
+      },
+    ]);
     setHistoryStep(historyStep + 1);
   };
 
@@ -101,7 +112,6 @@ export default function Home() {
 
   const handleExport = () => {
     const uri = stageRef.current.toDataURL();
-    console.log(uri);
     // we also can save uri as file
     // but in the demo on Konva website it will not work
     // because of iframe restrictions
@@ -133,6 +143,11 @@ export default function Home() {
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  // https://codesandbox.io/s/jq5hm?file=/index.js:418-584
+  const handleChangeColor = (event) => {
+    setColor(event.target.value);
   };
 
   return (
@@ -167,6 +182,9 @@ export default function Home() {
           </select>
         </li>
         <li style={{ display: "inline", padding: 2 }}>
+          <input type="color" value={color} onChange={handleChangeColor} />
+        </li>
+        <li style={{ display: "inline", padding: 2 }}>
           <button onClick={handleUndo}>undo</button>
         </li>
         <li style={{ display: "inline", padding: 2 }}>
@@ -191,7 +209,7 @@ export default function Home() {
               <Line
                 key={i}
                 points={line.points}
-                stroke="#df4b26"
+                stroke={line.color}
                 strokeWidth={5}
                 tension={0.5}
                 lineCap="round"
