@@ -14,14 +14,14 @@ function downloadURI(uri, name) {
   document.body.removeChild(link);
 }
 
-const URLImage = ({ image, setImage }) => {
+const URLImage = ({ image, draggable, setImage }) => {
   const [img] = useImage(image.src);
   return (
     <Image
       image={img}
       x={image.x}
       y={image.y}
-      draggable={true}
+      draggable={draggable}
       onDragEnd={(e) => {
         // https://konvajs.org/docs/react/Drag_And_Drop.html
         setImage({
@@ -37,13 +37,34 @@ const URLImage = ({ image, setImage }) => {
   );
 };
 
+enum Tool {
+  Pen = "pen",
+  Eraser = "eraser",
+  Move = "move",
+}
+
+enum Operation {
+  FreeDraw = "draw",
+  Erase = "erase",
+  Drag = "drag",
+  Import = "import",
+}
+
 export default function Home() {
-  const [tool, setTool] = React.useState("pen");
+  const [tool, setTool] = React.useState<Tool>(Tool.Pen);
   const [history, setHistory] = React.useState<
     {
-      tool: string;
-      color: string;
-      points: number[];
+      operation: Operation;
+      tool?: Tool;
+      color?: string;
+      points?: number[];
+      image?: {
+        // file path, so this id might be duplicated
+        id: string;
+        src: string;
+        x: number;
+        y: number;
+      };
     }[]
   >([]);
   const isDrawing = React.useRef(false);
@@ -59,6 +80,17 @@ export default function Home() {
 
   // color
   const [color, setColor] = React.useState([]);
+
+  const addToHistory = (newOperation) => {
+    let newHistory = history;
+    if (history == null || history.length !== historyStep) {
+      // clear old history logs
+      newHistory = history.slice(0, historyStep);
+    }
+
+    setHistory([...newHistory, newOperation]);
+    setHistoryStep(historyStep + 1);
+  };
 
   // https://konvajs.org/docs/react/Undo-Redo.html
   const handleUndo = () => {
@@ -76,18 +108,26 @@ export default function Home() {
   };
 
   const handleMouseDown = (e) => {
+    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
+      return;
+    }
+
     // https://konvajs.org/docs/react/Free_Drawing.html
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
-    setHistory([
-      ...history,
-      {
-        tool,
-        color,
-        points: [pos.x, pos.y],
-      },
-    ]);
-    setHistoryStep(historyStep + 1);
+    const operation =
+      tool === Tool.Pen
+        ? Operation.FreeDraw
+        : tool === Tool.Eraser
+        ? Operation.Erase
+        : null;
+
+    addToHistory({
+      operation,
+      tool,
+      color,
+      points: [pos.x, pos.y],
+    });
   };
 
   const handleMouseMove = (e) => {
@@ -95,6 +135,10 @@ export default function Home() {
     if (!isDrawing.current) {
       return;
     }
+    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
+      return;
+    }
+
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
     let lastLine = history[history.length - 1];
@@ -134,12 +178,16 @@ export default function Home() {
       const reader = new FileReader();
       reader.onload = (e) => {
         console.log(e.target.result);
-        setImages([
-          ...images,
-          {
+        addToHistory({
+          operation: Operation.Import,
+          image: {
+            id: file.name,
             src: e.target.result,
+            x: 0,
+            y: 0,
           },
-        ]);
+        });
+        setTool(Tool.Move);
       };
       reader.readAsDataURL(file);
     }
@@ -149,6 +197,9 @@ export default function Home() {
   const handleChangeColor = (event) => {
     setColor(event.target.value);
   };
+
+  // let imageRendered: [id: string]: bool = {}
+  let imageRendered: Object = {};
 
   return (
     <div>
@@ -177,8 +228,9 @@ export default function Home() {
               setTool(e.target.value);
             }}
           >
-            <option value="pen">Pen</option>
-            <option value="eraser">Eraser</option>
+            <option value={Tool.Pen}>Pen</option>
+            <option value={Tool.Eraser}>Eraser</option>
+            <option value={Tool.Move}>Move</option>
           </select>
         </li>
         <li style={{ display: "inline", padding: 2 }}>
@@ -202,37 +254,85 @@ export default function Home() {
       >
         <Layer>
           {history
-            .filter((_, i) => {
-              return i < historyStep;
+            .filter((historyOperation, i) => {
+              if (i >= historyStep) {
+                return false;
+              }
+              return (
+                historyOperation.operation === Operation.FreeDraw ||
+                historyOperation.operation === Operation.Erase
+              );
             })
-            .map((line, i) => (
-              <Line
-                key={i}
-                points={line.points}
-                stroke={line.color}
-                strokeWidth={5}
-                tension={0.5}
-                lineCap="round"
-                lineJoin="round"
-                globalCompositeOperation={
-                  line.tool === "eraser" ? "destination-out" : "source-over"
-                }
-              />
-            ))}
+            .map((historyOperation, i) => {
+              switch (historyOperation.tool) {
+                case Tool.Pen:
+                case Tool.Eraser:
+                  return (
+                    <Line
+                      key={i}
+                      points={historyOperation.points}
+                      stroke={historyOperation.color}
+                      strokeWidth={5}
+                      tension={0.5}
+                      lineCap="round"
+                      lineJoin="round"
+                      globalCompositeOperation={
+                        historyOperation.tool === Tool.Eraser
+                          ? "destination-out"
+                          : "source-over"
+                      }
+                    />
+                  );
+              }
+            })}
         </Layer>
-        {images.map((image, i) => {
-          return (
-            <Layer key={i}>
-              <URLImage
-                image={image}
-                setImage={(imageProps) => {
-                  images[i] = imageProps;
-                  setImages(images);
-                }}
-              />
-            </Layer>
-          );
-        })}
+        {history
+          .filter((historyOperation, i) => {
+            if (i >= historyStep) {
+              return false;
+            }
+            return historyOperation.operation === Operation.Import;
+          })
+          .map((historyOperation, i) => {
+            let image = historyOperation.image;
+            if (imageRendered[image.id]) {
+              return null;
+            }
+
+            for (let j = historyStep - 1; j >= i; j--) {
+              if (history[j].image == null) {
+                continue;
+              }
+              if (history[j].image.id !== image.id) {
+                continue;
+              }
+              if (history[j].operation === Operation.Drag) {
+                image.x = history[j].image.x;
+                image.y = history[j].image.y;
+                break;
+              }
+            }
+            imageRendered[image.id] = true;
+            console.log(history);
+
+            return (
+              <Layer key={image.id}>
+                <URLImage
+                  image={image}
+                  draggable={tool === Tool.Move}
+                  setImage={(imageProps) => {
+                    addToHistory({
+                      operation: Operation.Drag,
+                      image: {
+                        ...historyOperation,
+                        ...imageProps,
+                      },
+                    });
+                  }}
+                />
+              </Layer>
+            );
+          })}
       </Stage>
     </div>
   );
