@@ -5,11 +5,18 @@ This is a simple drawing tool built by next.js and [react-konva](https://konvajs
 This tool contains these features
 
 - [Pen and Eraser](https://konvajs.org/docs/react/Free_Drawing.html)
+- Fill
+  - Refered to [this article](http://www.williammalone.com/articles/html5-canvas-javascript-paint-bucket-tool/)
+- Layers
 - [Color](https://codesandbox.io/s/jq5hm?file=/index.js:199-273)
 - [Undo and Redo](https://konvajs.org/docs/react/Undo-Redo.html)
 - [Export an image](https://konvajs.org/docs/react/Canvas_Export.html)
 - [Import an image](https://konvajs.org/docs/react/Images.html)
   - Image is a [draggable](https://konvajs.org/docs/react/Drag_And_Drop.html)
+
+## TODOs
+
+- [Save](https://konvajs.org/docs/data_and_serialization/Best_Practices.html)
 
 ## Getting Started
 
