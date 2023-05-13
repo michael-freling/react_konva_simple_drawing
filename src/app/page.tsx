@@ -30,9 +30,6 @@ const URLImage = ({ image, draggable, setImage }) => {
           y: e.target.y(),
         });
       }}
-      // I will use offset to set origin to the center of the image
-      offsetX={img ? img.width / 2 : 0}
-      offsetY={img ? img.height / 2 : 0}
     />
   );
 };
@@ -191,6 +188,7 @@ export default function Home() {
       name: string;
       selected: boolean;
       deleted: boolean; // for undo/redo
+      isInitialLayer: boolean;
       type: LayerType;
     }[]
   >([
@@ -198,7 +196,9 @@ export default function Home() {
       id: initialLayerId,
       name: "Layer 1",
       selected: false,
-      type: "vector",
+      deleted: false,
+      isInitialLayer: true,
+      type: LayerType.Vector,
     },
   ]);
   const [currentLayerId, setCurrentLayerId] = React.useState(layers[0].id);
@@ -217,7 +217,7 @@ export default function Home() {
       }
       return historyOperation.layers!.includes(layer.id);
     });
-    if (layer.id === initialLayerId) {
+    if (layer.isInitialLayer) {
       if (isShown.length === 1) {
         return false;
       }
@@ -234,7 +234,8 @@ export default function Home() {
   // Import
   // https://konvajs.org/docs/react/Images.html
   // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
-  const inputFile = React.useRef<HTMLInputElement | null>(null);
+  const importFileRef = React.useRef<HTMLInputElement | null>(null);
+  const loadFileRef = React.useRef<HTMLInputElement | null>(null);
 
   // color
   const [color, setColor] = React.useState("#000000");
@@ -361,7 +362,7 @@ export default function Home() {
   };
 
   const handleImport = () => {
-    inputFile.current.click();
+    importFileRef.current.click();
   };
 
   const newLayer = ({ name, type }) => {
@@ -370,12 +371,13 @@ export default function Home() {
       id: layerId,
       selected: false,
       deleted: false,
+      isInitialLayer: false,
       name,
       type,
     };
   };
 
-  const handleFiles = (files) => {
+  const handleImportFiles = (files) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
@@ -462,19 +464,206 @@ export default function Home() {
     }
   };
 
+  const handleSave = () => {
+    const json = {
+      layers: [],
+    };
+    let konvaLayers = {};
+    stageRef.current.getLayers().forEach((konvaLayer) => {
+      konvaLayers[konvaLayer.id()] = konvaLayer;
+    });
+
+    console.debug({ json });
+    Object.keys(currentLayers).map((id) => {
+      const currentLayer = currentLayers[id];
+
+      switch (currentLayer.type) {
+        case LayerType.Image:
+        case LayerType.Raster:
+          const dataURL = konvaLayers[currentLayer.id].toDataURL();
+          json.layers.push({
+            id: currentLayer.id,
+            name: currentLayer.name,
+            type: currentLayer.type,
+            data: dataURL,
+            x: 0,
+            y: 0,
+          });
+          break;
+        case LayerType.Vector:
+          const operations = history.filter((historyOperation) => {
+            if (historyOperation.layers == null) {
+              return false;
+            }
+
+            if (!historyOperation.layers.includes(currentLayer.id)) {
+              return false;
+            }
+            return true;
+          });
+
+          const operationJson = operations
+            .map((operation) => {
+              switch (operation.tool) {
+                case Tool.Pen:
+                  return {
+                    tool: Tool.Pen,
+                    points: operation.points,
+                    color: operation.color,
+                  };
+                case Tool.Eraser:
+                  return {
+                    tool: Tool.Eraser,
+                    points: operation.points,
+                  };
+                default:
+                  console.warn(operation);
+                  return null;
+              }
+            })
+            .filter((result) => result != null);
+          json.layers.push({
+            id: currentLayer.id,
+            name: currentLayer.name,
+            type: currentLayer.type,
+            operations: operationJson,
+          });
+      }
+    });
+    var dataStr =
+      "data:text/json;charset=utf-8," +
+      encodeURIComponent(JSON.stringify(json));
+
+    var link = document.createElement("a");
+    link.download = "scene.json";
+    link.href = dataStr;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleLoad = () => {
+    loadFileRef.current.click();
+  };
+
+  const loadFile = (files) => {
+    if (files.length > 1) {
+      return;
+    }
+    if (files.length === 0) {
+      return;
+    }
+
+    const file = files[0];
+
+    if (!file.type.includes("json")) {
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      let updatedLayers = [];
+      // TODO: Update not to store the data into the history
+      const updatedHistory = [];
+
+      const json = JSON.parse(e.target.result);
+
+      console.debug({ json });
+      json.layers.forEach((layer) => {
+        switch (layer.type) {
+          case LayerType.Raster:
+          case LayerType.Image:
+            const imageData = layer.data;
+            updatedLayers.push({
+              id: layer.id,
+              name: layer.name,
+              type: layer.type,
+              selected: false,
+              deleted: false,
+            });
+            updatedHistory.push({
+              operation: Operation.Import,
+              image: {
+                id: layer.id,
+                src: imageData,
+                x: layer.x,
+                y: layer.y,
+              },
+              layers: [layer.id],
+            });
+            break;
+          case LayerType.Vector:
+            updatedLayers.push({
+              id: layer.id,
+              name: layer.name,
+              type: layer.type,
+              selected: false,
+              deleted: false,
+              isInitialLayer: true,
+            });
+            layer.operations.forEach((operation) => {
+              if (operation.tool === Tool.Pen) {
+                updatedHistory.push({
+                  operation: Operation.FreeDraw,
+                  tool: operation.tool,
+                  points: operation.points,
+                  color: operation.color,
+                  layers: [layer.id],
+                });
+              } else {
+                updatedHistory.push({
+                  operation: Operation.Erase,
+                  tool: operation.tool,
+                  points: operation.points,
+                  layers: [layer.id],
+                });
+              }
+            });
+            break;
+        }
+      });
+      console.debug({
+        updatedLayers,
+        updatedHistory,
+      });
+      setLayers(updatedLayers);
+      setHistory(updatedHistory);
+      setHistoryStep(updatedHistory.length);
+      setCurrentLayerId(updatedLayers[0].id);
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div>
       <input
         type="file"
         id="file"
-        ref={inputFile}
+        ref={loadFileRef}
         style={{ display: "none" }}
         onChange={(e) => {
-          handleFiles(e.target.files);
+          loadFile(e.target.files);
+        }}
+      />
+
+      <input
+        type="file"
+        id="file"
+        ref={importFileRef}
+        style={{ display: "none" }}
+        onChange={(e) => {
+          handleImportFiles(e.target.files);
         }}
       />
 
       <ul style={{ display: "inline-block" }}>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button onClick={handleSave}>Save</button>
+        </li>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button onClick={handleLoad}>Load</button>
+        </li>
+
         <li style={{ display: "inline", padding: 2 }}>
           <button onClick={handleExport}>Export</button>
         </li>
@@ -578,7 +767,7 @@ export default function Home() {
           const layer = currentLayers[id];
 
           return (
-            <Layer key={layer.id}>
+            <Layer id={layer.id} key={layer.id}>
               {history
                 .filter((historyOperation, i) => {
                   if (i >= historyStep) {
