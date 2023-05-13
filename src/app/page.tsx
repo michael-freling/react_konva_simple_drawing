@@ -150,6 +150,14 @@ enum Operation {
   Drag = "drag",
   Import = "import",
   Fill = "fill",
+  AddLayer = "add_layer",
+  DeleteSelectedLayers = "delete_selected_layers",
+}
+
+enum LayerType {
+  Vector = "vector",
+  Raster = "raster",
+  Image = "image",
 }
 
 export default function Home() {
@@ -169,13 +177,59 @@ export default function Home() {
         x: number;
         y: number;
       };
+      layers?: string[];
     }[]
   >([]);
   const isDrawing = React.useRef(false);
   // undo/redo: https://konvajs.org/docs/react/Undo-Redo.html
   const [historyStep, setHistoryStep] = React.useState(0);
   const stageRef = React.useRef(null);
-  const layerRef = React.useRef(null);
+  const initialLayerId = "initial-layer-1";
+  const [layers, setLayers] = React.useState<
+    {
+      id: string;
+      name: string;
+      selected: boolean;
+      deleted: boolean; // for undo/redo
+      type: LayerType;
+    }[]
+  >([
+    {
+      id: initialLayerId,
+      name: "Layer 1",
+      selected: false,
+      type: "vector",
+    },
+  ]);
+  const [currentLayerId, setCurrentLayerId] = React.useState(layers[0].id);
+
+  const currentLayersArray = layers.filter((layer, index) => {
+    const isShown = history.filter((historyOperation, i) => {
+      if (i >= historyStep) {
+        return false;
+      }
+      if (
+        historyOperation.operation !== Operation.AddLayer &&
+        historyOperation.operation !== Operation.DeleteSelectedLayers &&
+        historyOperation.operation !== Operation.Import
+      ) {
+        return false;
+      }
+      return historyOperation.layers!.includes(layer.id);
+    });
+    if (layer.id === initialLayerId) {
+      if (isShown.length === 1) {
+        return false;
+      }
+    } else if (isShown.length !== 1) {
+      return false;
+    }
+    return true;
+  });
+  let currentLayers = {};
+  currentLayersArray.forEach((layer) => {
+    currentLayers[layer.id] = layer;
+  });
 
   // Import
   // https://konvajs.org/docs/react/Images.html
@@ -212,11 +266,22 @@ export default function Home() {
   };
 
   const handleMouseDown = (e) => {
+    const currentLayer = currentLayers[currentLayerId];
+    if (currentLayer.type === LayerType.Image) {
+      // cannot edit anything on an image layer
+      return;
+    }
+
     if (tool === Tool.Fill) {
+      const currentLayer = currentLayers[currentLayerId];
+      if (currentLayer.type != LayerType.Raster) {
+        console.error("Only raster layer is supported");
+        return;
+      }
+
       const pointerPos = stageRef.current.getPointerPosition();
 
-      // Use FloodFill to fill the region around the clicked point
-      // const canvas = layerRef.current.getCanvas();
+      // TODO: Get all canvas from all layers, not only the current layer
       const canvas = stageRef.current.toCanvas();
 
       const imageData = fill(canvas, pointerPos.x, pointerPos.y, color);
@@ -234,6 +299,7 @@ export default function Home() {
           operation: Operation.Fill,
           tool,
           image: filledImage,
+          layers: [currentLayerId],
         });
       };
       // canvas.floodFill(pointerPos.x, pointerPos.y, [], color);
@@ -257,6 +323,7 @@ export default function Home() {
       tool,
       color,
       points: [pos.x, pos.y],
+      layers: [currentLayerId],
     });
   };
 
@@ -297,6 +364,17 @@ export default function Home() {
     inputFile.current.click();
   };
 
+  const newLayer = ({ name, type }) => {
+    const layerId = "layer-" + (layers.length + 1);
+    return {
+      id: layerId,
+      selected: false,
+      deleted: false,
+      name,
+      type,
+    };
+  };
+
   const handleFiles = (files) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -307,6 +385,13 @@ export default function Home() {
 
       const reader = new FileReader();
       reader.onload = (e) => {
+        setTool(Tool.Move);
+
+        const layer = newLayer({
+          name: file.name,
+          type: LayerType.Image,
+        });
+        setLayers([...layers, layer]);
         addToHistory({
           operation: Operation.Import,
           image: {
@@ -315,8 +400,9 @@ export default function Home() {
             x: 0,
             y: 0,
           },
+          layers: [layer.id],
         });
-        setTool(Tool.Move);
+        setCurrentLayerId(layer.id);
       };
       reader.readAsDataURL(file);
     }
@@ -331,11 +417,50 @@ export default function Home() {
   // let imageRendered: [id: string]: bool = {}
   let imageRendered: Object = {};
 
-  let canvasContext = null;
-  if (layerRef.current != null) {
-    const canvas = layerRef.current.getCanvas();
-    canvasContext = canvas.getContext("2d");
-  }
+  const handleAddLayer = (layerType: LayerType) => {
+    const layer = newLayer({
+      name: "Layer " + (layers.length + 1),
+      type: layerType,
+    });
+    setLayers([...layers, layer]);
+    addToHistory({
+      operation: Operation.AddLayer,
+      layers: [layer.id],
+    });
+  };
+
+  const handleDeleteSelectedLayers = () => {
+    const selectedLayers = layers.filter((layer) => layer.selected);
+    if (selectedLayers.length === 0) {
+      return;
+    }
+
+    const newLayers = layers.map((layer) => {
+      if (layer.selected) {
+        layer.deleted = true;
+        layer.selected = false;
+      }
+
+      return layer;
+    });
+
+    if (newLayers.filter((layer) => !layer.deleted).length === 0) {
+      console.error("Please keep at least one layer");
+      return;
+    }
+
+    setLayers([...newLayers]);
+    addToHistory({
+      operation: Operation.DeleteSelectedLayers,
+      layers: selectedLayers.map((layer) => layer.id),
+    });
+    if (
+      newLayers.filter((layer) => layer.id === currentLayerId && !layer.deleted)
+        .length === 0
+    ) {
+      setCurrentLayerId(newLayers[0].id);
+    }
+  };
 
   return (
     <div>
@@ -380,6 +505,66 @@ export default function Home() {
         </li>
       </ul>
 
+      <ul style={{ display: "block" }}>
+        <li style={{ display: "inline-block" }}>
+          <button
+            onClick={() => {
+              handleAddLayer(LayerType.Vector);
+            }}
+          >
+            Add a vector layer
+          </button>
+        </li>
+        <li style={{ display: "inline-block" }}>
+          <button
+            onClick={() => {
+              handleAddLayer(LayerType.Raster);
+            }}
+          >
+            Add a raster layer
+          </button>
+        </li>
+        <li style={{ display: "inline-block" }}>
+          <button onClick={handleDeleteSelectedLayers}>
+            Delete select layers
+          </button>
+        </li>
+      </ul>
+
+      <ul style={{ padding: 2 }}>
+        {Object.keys(currentLayers).map((id) => {
+          const layer = currentLayers[id];
+
+          return (
+            <li key={layer.id} style={{ padding: 2 }}>
+              <input
+                type="checkbox"
+                id={layer.id}
+                checked={layer.selected}
+                onChange={() => {
+                  setCurrentLayerId(layer.id);
+                  layers.forEach((l, j) => {
+                    if (l.id == layer.id) {
+                      layers[j].selected = !l.selected;
+                    }
+                  });
+                  setLayers([...layers]);
+                }}
+              />
+              <label htmlFor={layer.id}>
+                {layer.id === currentLayerId ? (
+                  <span style={{ backgroundColor: "yellow" }}>
+                    {layer.name} ({layer.type})
+                  </span>
+                ) : (
+                  layer.name + " (" + layer.type + ")"
+                )}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+
       <Stage
         width={width}
         height={height}
@@ -387,90 +572,104 @@ export default function Home() {
         onMousemove={handleMouseMove}
         onMouseup={handleMouseUp}
         ref={stageRef}
+        style={{ backgroundColor: "rgb(128, 128, 128)" }}
       >
-        <Layer ref={layerRef}>
-          {history
-            .filter((historyOperation, i) => {
-              if (i >= historyStep) {
-                return false;
-              }
-              return (
-                historyOperation.operation === Operation.FreeDraw ||
-                historyOperation.operation === Operation.Erase ||
-                historyOperation.operation === Operation.Fill
-              );
-            })
-            .map((historyOperation, i) => {
-              switch (historyOperation.tool) {
-                case Tool.Fill:
-                  return <Image key={i} image={historyOperation.image} />;
-                case Tool.Pen:
-                case Tool.Eraser:
+        {Object.keys(currentLayers).map((id) => {
+          const layer = currentLayers[id];
+
+          return (
+            <Layer key={layer.id}>
+              {history
+                .filter((historyOperation, i) => {
+                  if (i >= historyStep) {
+                    return false;
+                  }
+                  if (
+                    historyOperation.operation === Operation.FreeDraw ||
+                    historyOperation.operation === Operation.Erase ||
+                    historyOperation.operation === Operation.Fill
+                  ) {
+                    return historyOperation.layers?.includes(layer.id);
+                  }
+                })
+                .map((historyOperation, i) => {
+                  switch (historyOperation.tool) {
+                    case Tool.Fill:
+                      return <Image key={i} image={historyOperation.image} />;
+                    case Tool.Eraser:
+                    case Tool.Pen:
+                      return (
+                        <Line
+                          key={i}
+                          points={historyOperation.points}
+                          stroke={historyOperation.color}
+                          strokeWidth={5}
+                          tension={0.5}
+                          lineCap="round"
+                          lineJoin="round"
+                          globalCompositeOperation={
+                            historyOperation.tool === Tool.Eraser
+                              ? "destination-out"
+                              : "source-over"
+                          }
+                        />
+                      );
+                  }
+                })}
+
+              {history
+                .filter((historyOperation, i) => {
+                  if (i >= historyStep) {
+                    return false;
+                  }
+                  if (historyOperation.operation === Operation.Import) {
+                    return historyOperation.layers?.includes(layer.id);
+                  }
+                })
+                .map((historyOperation, i) => {
+                  let image = historyOperation.image;
+                  if (imageRendered[image.id]) {
+                    return null;
+                  }
+
+                  for (let j = historyStep - 1; j >= i; j--) {
+                    if (history[j].image == null) {
+                      continue;
+                    }
+                    if (history[j].image.id !== image.id) {
+                      continue;
+                    }
+                    if (history[j].operation === Operation.Drag) {
+                      image.x = history[j].image.x;
+                      image.y = history[j].image.y;
+                      break;
+                    }
+                  }
+                  imageRendered[image.id] = true;
+
+                  const draggable =
+                    layer.id === currentLayerId && tool === Tool.Move;
+
                   return (
-                    <Line
-                      key={i}
-                      points={historyOperation.points}
-                      stroke={historyOperation.color}
-                      strokeWidth={5}
-                      tension={0.5}
-                      lineCap="round"
-                      lineJoin="round"
-                      globalCompositeOperation={
-                        historyOperation.tool === Tool.Eraser
-                          ? "destination-out"
-                          : "source-over"
-                      }
+                    <URLImage
+                      key={layer.id}
+                      image={image}
+                      draggable={draggable}
+                      setImage={(imageProps) => {
+                        addToHistory({
+                          operation: Operation.Drag,
+                          image: {
+                            ...historyOperation,
+                            ...imageProps,
+                          },
+                        });
+                      }}
                     />
                   );
-              }
-            })}
-        </Layer>
-        {history
-          .filter((historyOperation, i) => {
-            if (i >= historyStep) {
-              return false;
-            }
-            return historyOperation.operation === Operation.Import;
-          })
-          .map((historyOperation, i) => {
-            let image = historyOperation.image;
-            if (imageRendered[image.id]) {
-              return null;
-            }
-
-            for (let j = historyStep - 1; j >= i; j--) {
-              if (history[j].image == null) {
-                continue;
-              }
-              if (history[j].image.id !== image.id) {
-                continue;
-              }
-              if (history[j].operation === Operation.Drag) {
-                image.x = history[j].image.x;
-                image.y = history[j].image.y;
-                break;
-              }
-            }
-            imageRendered[image.id] = true;
-
-            return (
-              <Layer key={image.id}>
-                <URLImage
-                  image={image}
-                  draggable={tool === Tool.Move}
-                  setImage={(imageProps) => {
-                    addToHistory({
-                      operation: Operation.Drag,
-                      image: {
-                        ...historyOperation,
-                        ...imageProps,
-                      },
-                    });
-                  }}
-                />
-              </Layer>
-            );
-          })}
+                })}
+            </Layer>
+          );
+        })}
       </Stage>
     </div>
   );
