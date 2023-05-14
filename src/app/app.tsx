@@ -1,7 +1,15 @@
 import Konva from "konva";
 import React from "react";
-import { Stage, Layer, Line, Image } from "react-konva";
+import { Stage, Layer as KonvaLayer, Line, Image } from "react-konva";
 import useImage from "use-image";
+import {
+  LayerType,
+  Layer,
+  Tool,
+  Operation,
+  OperationType,
+} from "@/components/type";
+import { newAddLayerCommand } from "@/components/layer";
 
 // function from https://stackoverflow.com/a/15832662/512042
 function downloadURI(uri: string, name: string) {
@@ -31,6 +39,7 @@ const URLImage = ({
   return (
     <Image
       image={img}
+      alt={image.id}
       x={image.x}
       y={image.y}
       draggable={draggable}
@@ -156,54 +165,6 @@ function fill(
   return newImageData;
 }
 
-enum Tool {
-  Pen = "pen",
-  Eraser = "eraser",
-  Move = "move",
-  Fill = "fill",
-}
-
-enum Operation {
-  FreeDraw = "draw",
-  Erase = "erase",
-  Drag = "drag",
-  Import = "import",
-  Fill = "fill",
-  AddLayer = "add_layer",
-  DeleteSelectedLayers = "delete_selected_layers",
-}
-
-enum LayerType {
-  Vector = "vector",
-  Raster = "raster",
-  Image = "image",
-}
-
-type Layer = {
-  id: string;
-  name: string;
-  selected: boolean;
-  deleted: boolean; // for undo/redo
-  isInitialLayer: boolean;
-  type: LayerType;
-};
-
-type OperationType = {
-  operation: Operation;
-  tool?: Tool;
-  color?: string;
-  points?: number[];
-  image?: {
-    // file path, so this id might be duplicated
-    id: string;
-    src: string;
-    x: number;
-    y: number;
-  };
-  fillImageData?: HTMLImageElement;
-  layers?: string[];
-};
-
 export default function Home() {
   const width = window.innerWidth;
   const height = window.innerHeight;
@@ -232,7 +193,6 @@ export default function Home() {
         return false;
       }
       if (
-        historyOperation.operation !== Operation.AddLayer &&
         historyOperation.operation !== Operation.DeleteSelectedLayers &&
         historyOperation.operation !== Operation.Import
       ) {
@@ -240,11 +200,7 @@ export default function Home() {
       }
       return historyOperation.layers!.includes(layer.id);
     });
-    if (layer.isInitialLayer) {
-      if (isShown.length === 1) {
-        return false;
-      }
-    } else if (isShown.length !== 1) {
+    if (isShown.length === 1) {
       return false;
     }
     return true;
@@ -281,11 +237,33 @@ export default function Home() {
     if (historyStep === 0) {
       return;
     }
-    setHistoryStep(historyStep - 1);
+    const newHistoryStep = historyStep - 1;
+    setHistoryStep(newHistoryStep);
+
+    const command = history[newHistoryStep];
+    if (command.undo != null) {
+      command.undo({
+        layers,
+        setLayers,
+        currentLayerId,
+        setCurrentLayerId,
+      });
+    }
   };
 
   const handleRedo = () => {
     if (historyStep === history.length) {
+      return;
+    }
+    const command = history[historyStep];
+    if (command.run != null) {
+      command.run({
+        layers,
+        setLayers,
+        currentLayerId,
+        setCurrentLayerId,
+      });
+      setHistoryStep(historyStep + 1);
       return;
     }
     setHistoryStep(historyStep + 1);
@@ -455,11 +433,15 @@ export default function Home() {
       name: "Layer " + (layers.length + 1),
       type: layerType,
     });
-    setLayers([...layers, layer]);
-    addToHistory({
-      operation: Operation.AddLayer,
-      layers: [layer.id],
+    // setLayers([...layers, layer]);
+    const command = newAddLayerCommand(layer, currentLayerId);
+    command!.run({
+      layers,
+      setLayers,
+      currentLayerId,
+      setCurrentLayerId,
     });
+    addToHistory(command);
   };
 
   const handleDeleteSelectedLayers = () => {
@@ -841,7 +823,7 @@ export default function Home() {
           const layer = currentLayers[id];
 
           return (
-            <Layer id={layer.id} key={layer.id}>
+            <KonvaLayer id={layer.id} key={layer.id}>
               {history
                 .filter((historyOperation, i) => {
                   if (i >= historyStep) {
@@ -936,7 +918,7 @@ export default function Home() {
                     />
                   );
                 })}
-            </Layer>
+            </KonvaLayer>
           );
         })}
       </Stage>
