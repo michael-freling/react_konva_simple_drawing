@@ -13,10 +13,8 @@ This tool contains these features
 - [Export an image](https://konvajs.org/docs/react/Canvas_Export.html)
 - [Import an image](https://konvajs.org/docs/react/Images.html)
   - Image is a [draggable](https://konvajs.org/docs/react/Drag_And_Drop.html)
-
-## TODOs
-
 - [Save](https://konvajs.org/docs/data_and_serialization/Best_Practices.html)
+  - Save a file as JSON
 
 ## Getting Started
 
