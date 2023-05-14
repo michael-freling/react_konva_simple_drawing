@@ -1,4 +1,6 @@
-# Simple drawing tool
+# React Konva Simple Free Drawing
+
+![CI test](https://github.com/michael-freling/simple_drawing/actions/workflows/test.yml/badge.svg)
 
 This is a simple drawing tool built by next.js and [react-konva](https://konvajs.org/docs/react/index.html).
 
