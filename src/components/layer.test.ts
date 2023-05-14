@@ -1,4 +1,4 @@
-import { newAddLayerCommand } from "./layer";
+import { newAddLayerCommand, newDeleteSelectedLayersCommand } from "./layer";
 
 describe("newAddLayerCommand", () => {
   const defaultCurrentLayerId = "initial-layer";
@@ -94,4 +94,126 @@ describe("newAddLayerCommand", () => {
       });
     }
   );
+});
+
+describe("newDeleteSelectedLayersCommand", () => {
+  const defaultCurrentLayerId = "initial-layer";
+
+  const runCases = [
+    {
+      name: "Delete one layer",
+      layers: [
+        {
+          id: defaultCurrentLayerId,
+          selected: true,
+        },
+        {
+          id: "layer-2",
+        },
+      ],
+      currentLayerId: defaultCurrentLayerId,
+      expectedLayers: [
+        {
+          id: "layer-2",
+        },
+      ],
+      expectedCurrentLayerId: "layer-2",
+    },
+    {
+      name: "Delete multiple layers",
+      layers: [
+        {
+          id: "layer-3",
+          selected: true,
+        },
+        {
+          id: "layer-2",
+        },
+        {
+          id: defaultCurrentLayerId,
+          selected: true,
+        },
+      ],
+      currentLayerId: defaultCurrentLayerId,
+      expectedLayers: [
+        {
+          id: "layer-2",
+        },
+      ],
+      expectedCurrentLayerId: "layer-2",
+    },
+    {
+      name: "a deleted layer isn't the current layer",
+      layers: [
+        {
+          id: "layer-3",
+          selected: true,
+        },
+        {
+          id: defaultCurrentLayerId,
+        },
+        {
+          id: "layer-2",
+          selected: true,
+        },
+      ],
+      currentLayerId: defaultCurrentLayerId,
+      expectedLayers: [
+        {
+          id: defaultCurrentLayerId,
+        },
+      ],
+      expectedCurrentLayerId: defaultCurrentLayerId,
+    },
+  ];
+  test.each(runCases)(
+    "$name",
+    ({ layers, currentLayerId, expectedLayers, expectedCurrentLayerId }) => {
+      const command = newDeleteSelectedLayersCommand(layers);
+      command.run({
+        currentLayerId,
+        setCurrentLayerId: (actual) => {
+          expect(actual).toEqual(expectedCurrentLayerId);
+        },
+        setLayers: (actual) => {
+          expect(actual).toEqual(expectedLayers);
+        },
+      });
+
+      command.undo({
+        setLayers: (actual) => {
+          expect(actual).toEqual(layers);
+        },
+      });
+    }
+  );
+
+  test.each([
+    {
+      name: "empty layers",
+      layers: [],
+    },
+    {
+      name: "no layer was selected",
+      layers: [
+        {
+          id: defaultCurrentLayerId,
+        },
+      ],
+    },
+    {
+      name: "no layer would exist",
+      layers: [
+        {
+          id: defaultCurrentLayerId,
+          selected: true,
+        },
+      ],
+    },
+  ])("$name", ({ layers }) => {
+    expect(() => {
+      const command = newDeleteSelectedLayersCommand(layers);
+      command.run();
+    }).toThrow(Error);
+  });
 });

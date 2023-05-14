@@ -5,7 +5,6 @@ export function newAddLayerCommand(
   currentLayerId: string
 ): OperationType & {
   run: (state: AppState) => void;
-  undo: (state: AppState) => void;
 } {
   return new AddLayerCommand(newLayer, currentLayerId);
 }
@@ -20,7 +19,7 @@ class AddLayerCommand implements OperationType {
     this.currentLayerId = currentLayerId;
   }
 
-  run({ layers, setLayers }: AppState) {
+  run({ layers, setLayers }: AppState): void {
     let currentLayerIndex = layers.length;
     layers.forEach((layer, index) => {
       if (layer.id !== this.currentLayerId) {
@@ -61,5 +60,58 @@ class AddLayerCommand implements OperationType {
     }
     setLayers(result);
     setCurrentLayerId(this.currentLayerId);
+  }
+}
+
+export function newDeleteSelectedLayersCommand(
+  layers: Layer[]
+): DeleteSelectedLayersCommand {
+  return new DeleteSelectedLayersCommand(layers);
+}
+
+class DeleteSelectedLayersCommand implements OperationType {
+  operation = Operation.DeleteSelectedLayers;
+
+  selectedLayers: Layer[];
+  newLayers: Layer[];
+  originalLayers: Layer[];
+
+  constructor(layers: Layer[]) {
+    this.originalLayers = [...layers];
+
+    let newLayers: Layer[] = [];
+    let selectedLayers: Layer[] = [];
+    layers.forEach((layer) => {
+      if (layer.selected) {
+        selectedLayers.push(layer);
+      } else {
+        newLayers.push(layer);
+      }
+    });
+    this.newLayers = newLayers;
+    this.selectedLayers = selectedLayers;
+  }
+
+  run({ setLayers, currentLayerId, setCurrentLayerId }: AppState) {
+    if (this.newLayers.length === 0 || this.selectedLayers.length === 0) {
+      throw new Error("Prerequisite check error");
+    }
+
+    setLayers(this.newLayers);
+
+    const isCurrentLayerDeleted =
+      this.newLayers.filter((layer) => layer.id === currentLayerId).length ===
+      0;
+    if (isCurrentLayerDeleted) {
+      setCurrentLayerId(this.newLayers[0].id);
+    }
+  }
+
+  undo({ setLayers }: AppState): void {
+    if (this.newLayers.length === 0 || this.selectedLayers.length === 0) {
+      throw new Error("Prerequisite check error");
+    }
+
+    setLayers([...this.originalLayers]);
   }
 }

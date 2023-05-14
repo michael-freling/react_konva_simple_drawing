@@ -9,7 +9,10 @@ import {
   Operation,
   OperationType,
 } from "@/components/type";
-import { newAddLayerCommand } from "@/components/layer";
+import {
+  newAddLayerCommand,
+  newDeleteSelectedLayersCommand,
+} from "@/components/layer";
 
 // function from https://stackoverflow.com/a/15832662/512042
 function downloadURI(uri: string, name: string) {
@@ -174,41 +177,21 @@ export default function Home() {
   // undo/redo: https://konvajs.org/docs/react/Undo-Redo.html
   const [historyStep, setHistoryStep] = React.useState(0);
   const stageRef = React.useRef<Konva.Stage>(null);
-  const initialLayerId = "initial-layer-1";
   const [layers, setLayers] = React.useState<Layer[]>([
     {
-      id: initialLayerId,
+      id: "layer-1",
       name: "Layer 1",
       selected: false,
-      deleted: false,
       isInitialLayer: true,
       type: LayerType.Vector,
     },
   ]);
   const [currentLayerId, setCurrentLayerId] = React.useState(layers[0].id);
 
-  const currentLayersArray = layers.filter((layer, index) => {
-    const isShown = history.filter((historyOperation, i) => {
-      if (i >= historyStep) {
-        return false;
-      }
-      if (
-        historyOperation.operation !== Operation.DeleteSelectedLayers &&
-        historyOperation.operation !== Operation.Import
-      ) {
-        return false;
-      }
-      return historyOperation.layers!.includes(layer.id);
-    });
-    if (isShown.length === 1) {
-      return false;
-    }
-    return true;
-  });
   let currentLayers: {
     [id: string]: Layer;
   } = {};
-  currentLayersArray.forEach((layer) => {
+  layers.forEach((layer) => {
     currentLayers[layer.id] = layer;
   });
 
@@ -377,7 +360,6 @@ export default function Home() {
     return {
       id: layerId,
       selected: false,
-      deleted: false,
       isInitialLayer: false,
       name,
       type,
@@ -433,7 +415,6 @@ export default function Home() {
       name: "Layer " + (layers.length + 1),
       type: layerType,
     });
-    // setLayers([...layers, layer]);
     const command = newAddLayerCommand(layer, currentLayerId);
     command!.run({
       layers,
@@ -445,36 +426,23 @@ export default function Home() {
   };
 
   const handleDeleteSelectedLayers = () => {
-    const selectedLayers = layers.filter((layer) => layer.selected);
-    if (selectedLayers.length === 0) {
+    const command = newDeleteSelectedLayersCommand(layers);
+    if (command.selectedLayers.length === 0) {
+      console.error("Please select at least one layer");
       return;
     }
-
-    const newLayers = layers.map((layer) => {
-      if (layer.selected) {
-        layer.deleted = true;
-        layer.selected = false;
-      }
-
-      return layer;
-    });
-
-    if (newLayers.filter((layer) => !layer.deleted).length === 0) {
+    if (command.newLayers.length === 0) {
       console.error("Please keep at least one layer");
       return;
     }
 
-    setLayers([...newLayers]);
-    addToHistory({
-      operation: Operation.DeleteSelectedLayers,
-      layers: selectedLayers.map((layer) => layer.id),
+    addToHistory(command);
+    command.run({
+      layers,
+      setLayers,
+      currentLayerId,
+      setCurrentLayerId,
     });
-    if (
-      newLayers.filter((layer) => layer.id === currentLayerId && !layer.deleted)
-        .length === 0
-    ) {
-      setCurrentLayerId(newLayers[0].id);
-    }
   };
 
   const handleSave = () => {
@@ -627,7 +595,6 @@ export default function Home() {
                 name: layer.name,
                 type: layer.type,
                 selected: false,
-                deleted: false,
                 isInitialLayer: false, // TODO want to replace it later
               });
               updatedHistory.push({
@@ -647,7 +614,6 @@ export default function Home() {
                 name: layer.name,
                 type: layer.type,
                 selected: false,
-                deleted: false,
                 isInitialLayer: true,
               });
               layer.operations!.forEach(
