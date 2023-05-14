@@ -1,11 +1,12 @@
 "use client";
 
-import React from "react";
+import Konva from "konva";
+import React, { ReactText } from "react";
 import { Stage, Layer, Line, Image } from "react-konva";
 import useImage from "use-image";
 
 // function from https://stackoverflow.com/a/15832662/512042
-function downloadURI(uri, name) {
+function downloadURI(uri: string, name: string) {
   var link = document.createElement("a");
   link.download = name;
   link.href = uri;
@@ -14,7 +15,20 @@ function downloadURI(uri, name) {
   document.body.removeChild(link);
 }
 
-const URLImage = ({ image, draggable, setImage }) => {
+const URLImage = ({
+  image,
+  draggable,
+  setImage,
+}: {
+  image: {
+    id: string;
+    src: string;
+    x: number;
+    y: number;
+  };
+  draggable: boolean;
+  setImage: (props: { id: string; src: string; x: number; y: number }) => void;
+}) => {
   const [img] = useImage(image.src);
   return (
     <Image
@@ -35,11 +49,21 @@ const URLImage = ({ image, draggable, setImage }) => {
 };
 
 // http://www.williammalone.com/articles/html5-canvas-javascript-paint-bucket-tool/
-function fill(canvas, startX, startY, color) {
+function fill(
+  canvas: HTMLCanvasElement,
+  startX: number,
+  startY: number,
+  color: string
+) {
   const canvasContext = canvas.getContext("2d");
-  let imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
-  let newImageData = imageData;
-  imageData = imageData.data;
+  let canvasContextImageData = canvasContext!.getImageData(
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  );
+  let newImageData = canvasContextImageData;
+  const imageData = canvasContextImageData.data;
 
   const fillRed = parseInt(color.substring(1, 3), 16);
   const fillGreen = parseInt(color.substring(3, 5), 16);
@@ -157,41 +181,42 @@ enum LayerType {
   Image = "image",
 }
 
+type Layer = {
+  id: string;
+  name: string;
+  selected: boolean;
+  deleted: boolean; // for undo/redo
+  isInitialLayer: boolean;
+  type: LayerType;
+};
+
+type OperationType = {
+  operation: Operation;
+  tool?: Tool;
+  color?: string;
+  points?: number[];
+  image?: {
+    // file path, so this id might be duplicated
+    id: string;
+    src: string;
+    x: number;
+    y: number;
+  };
+  fillImageData?: HTMLImageElement;
+  layers?: string[];
+};
+
 export default function Home() {
   const width = window.innerWidth;
   const height = window.innerHeight;
   const [tool, setTool] = React.useState<Tool>(Tool.Pen);
-  const [history, setHistory] = React.useState<
-    {
-      operation: Operation;
-      tool?: Tool;
-      color?: string;
-      points?: number[];
-      image?: {
-        // file path, so this id might be duplicated
-        id: string;
-        src: string;
-        x: number;
-        y: number;
-      };
-      layers?: string[];
-    }[]
-  >([]);
+  const [history, setHistory] = React.useState<OperationType[]>([]);
   const isDrawing = React.useRef(false);
   // undo/redo: https://konvajs.org/docs/react/Undo-Redo.html
   const [historyStep, setHistoryStep] = React.useState(0);
-  const stageRef = React.useRef(null);
+  const stageRef = React.useRef<Konva.Stage>(null);
   const initialLayerId = "initial-layer-1";
-  const [layers, setLayers] = React.useState<
-    {
-      id: string;
-      name: string;
-      selected: boolean;
-      deleted: boolean; // for undo/redo
-      isInitialLayer: boolean;
-      type: LayerType;
-    }[]
-  >([
+  const [layers, setLayers] = React.useState<Layer[]>([
     {
       id: initialLayerId,
       name: "Layer 1",
@@ -226,7 +251,9 @@ export default function Home() {
     }
     return true;
   });
-  let currentLayers = {};
+  let currentLayers: {
+    [id: string]: Layer;
+  } = {};
   currentLayersArray.forEach((layer) => {
     currentLayers[layer.id] = layer;
   });
@@ -240,7 +267,7 @@ export default function Home() {
   // color
   const [color, setColor] = React.useState("#000000");
 
-  const addToHistory = (newOperation) => {
+  const addToHistory = (newOperation: OperationType) => {
     let newHistory = history;
     if (history == null || history.length !== historyStep) {
       // clear old history logs
@@ -266,7 +293,7 @@ export default function Home() {
     setHistoryStep(historyStep + 1);
   };
 
-  const handleMouseDown = (e) => {
+  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const currentLayer = currentLayers[currentLayerId];
     if (currentLayer.type === LayerType.Image) {
       // cannot edit anything on an image layer
@@ -280,10 +307,10 @@ export default function Home() {
         return;
       }
 
-      const pointerPos = stageRef.current.getPointerPosition();
+      const pointerPos = stageRef.current!.getPointerPosition()!;
 
       // TODO: Get all canvas from all layers, not only the current layer
-      const canvas = stageRef.current.toCanvas();
+      const canvas = stageRef.current!.toCanvas();
 
       const imageData = fill(canvas, pointerPos.x, pointerPos.y, color);
 
@@ -299,7 +326,7 @@ export default function Home() {
         addToHistory({
           operation: Operation.Fill,
           tool,
-          image: filledImage,
+          fillImageData: filledImage,
           layers: [currentLayerId],
         });
       };
@@ -311,13 +338,11 @@ export default function Home() {
     }
     // https://konvajs.org/docs/react/Free_Drawing.html
     isDrawing.current = true;
-    const pos = e.target.getStage().getPointerPosition();
-    const operation =
-      tool === Tool.Pen
-        ? Operation.FreeDraw
-        : tool === Tool.Eraser
-        ? Operation.Erase
-        : null;
+    const pos = e.target.getStage()!.getPointerPosition()!;
+    let operation = Operation.FreeDraw;
+    if (tool === Tool.Eraser) {
+      operation = Operation.Erase;
+    }
 
     addToHistory({
       operation,
@@ -328,7 +353,7 @@ export default function Home() {
     });
   };
 
-  const handleMouseMove = (e) => {
+  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
     // no drawing - skipping
     if (!isDrawing.current) {
       return;
@@ -337,11 +362,11 @@ export default function Home() {
       return;
     }
 
-    const stage = e.target.getStage();
-    const point = stage.getPointerPosition();
+    const stage = e.target.getStage()!;
+    const point = stage.getPointerPosition()!;
     let lastLine = history[history.length - 1];
     // add point
-    lastLine.points = lastLine.points.concat([point.x, point.y]);
+    lastLine.points = lastLine.points!.concat([point.x, point.y]);
 
     // replace last
     history.splice(history.length - 1, 1, lastLine);
@@ -353,7 +378,7 @@ export default function Home() {
   };
 
   const handleExport = () => {
-    const uri = stageRef.current.toDataURL();
+    const uri = stageRef.current!.toDataURL();
     // we also can save uri as file
     // but in the demo on Konva website it will not work
     // because of iframe restrictions
@@ -362,10 +387,16 @@ export default function Home() {
   };
 
   const handleImport = () => {
-    importFileRef.current.click();
+    importFileRef.current!.click();
   };
 
-  const newLayer = ({ name, type }) => {
+  const newLayer = ({
+    name,
+    type,
+  }: {
+    name: string;
+    type: LayerType;
+  }): Layer => {
     const layerId = "layer-" + (layers.length + 1);
     return {
       id: layerId,
@@ -377,7 +408,7 @@ export default function Home() {
     };
   };
 
-  const handleImportFiles = (files) => {
+  const handleImportFiles = (files: FileList) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
 
@@ -386,7 +417,7 @@ export default function Home() {
       }
 
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = (e: ProgressEvent<FileReader>) => {
         setTool(Tool.Move);
 
         const layer = newLayer({
@@ -394,11 +425,12 @@ export default function Home() {
           type: LayerType.Image,
         });
         setLayers([...layers, layer]);
+
         addToHistory({
           operation: Operation.Import,
           image: {
             id: file.name,
-            src: e.target.result,
+            src: e.target!.result as string,
             x: 0,
             y: 0,
           },
@@ -411,13 +443,14 @@ export default function Home() {
   };
 
   // https://codesandbox.io/s/jq5hm?file=/index.js:418-584
-  const handleChangeColor = (event) => {
+  const handleChangeColor = (event: React.ChangeEvent<HTMLInputElement>) => {
     let colorCode = event.target.value;
     setColor(event.target.value);
   };
 
-  // let imageRendered: [id: string]: bool = {}
-  let imageRendered: Object = {};
+  let imageRendered: {
+    [id: string]: boolean;
+  } = {};
 
   const handleAddLayer = (layerType: LayerType) => {
     const layer = newLayer({
@@ -465,11 +498,30 @@ export default function Home() {
   };
 
   const handleSave = () => {
-    const json = {
+    const json: {
+      layers: {
+        id: string;
+        name: string;
+        type: LayerType;
+        // vector
+        operations?: {
+          tool: Tool;
+          color?: string;
+          points: number[];
+        }[];
+
+        // raster and import
+        data?: string;
+        x?: number;
+        y?: number;
+      }[];
+    } = {
       layers: [],
     };
-    let konvaLayers = {};
-    stageRef.current.getLayers().forEach((konvaLayer) => {
+    let konvaLayers: {
+      [id: string]: Konva.Layer;
+    } = {};
+    stageRef.current!.getLayers().forEach((konvaLayer) => {
       konvaLayers[konvaLayer.id()] = konvaLayer;
     });
 
@@ -526,7 +578,7 @@ export default function Home() {
             id: currentLayer.id,
             name: currentLayer.name,
             type: currentLayer.type,
-            operations: operationJson,
+            operations: operationJson as any,
           });
       }
     });
@@ -543,10 +595,10 @@ export default function Home() {
   };
 
   const handleLoad = () => {
-    loadFileRef.current.click();
+    loadFileRef.current!.click();
   };
 
-  const loadFile = (files) => {
+  const loadFile = (files: FileList) => {
     if (files.length > 1) {
       return;
     }
@@ -561,67 +613,91 @@ export default function Home() {
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      let updatedLayers = [];
+    reader.onload = (e: ProgressEvent<FileReader>) => {
+      let updatedLayers: Layer[] = [];
       // TODO: Update not to store the data into the history
-      const updatedHistory = [];
+      const updatedHistory: OperationType[] = [];
 
-      const json = JSON.parse(e.target.result);
+      const json = JSON.parse(e.target!.result as string);
 
       console.debug({ json });
-      json.layers.forEach((layer) => {
-        switch (layer.type) {
-          case LayerType.Raster:
-          case LayerType.Image:
-            const imageData = layer.data;
-            updatedLayers.push({
-              id: layer.id,
-              name: layer.name,
-              type: layer.type,
-              selected: false,
-              deleted: false,
-            });
-            updatedHistory.push({
-              operation: Operation.Import,
-              image: {
+      json.layers.forEach(
+        (layer: {
+          id: string;
+          name: string;
+          type: LayerType;
+          // vector
+          operations?: {
+            tool: Tool;
+            color?: string;
+            points: number[];
+          }[];
+
+          // raster and import
+          data?: string;
+          x?: number;
+          y?: number;
+        }) => {
+          switch (layer.type) {
+            case LayerType.Raster:
+            case LayerType.Image:
+              const imageData = layer.data;
+              updatedLayers.push({
                 id: layer.id,
-                src: imageData,
-                x: layer.x,
-                y: layer.y,
-              },
-              layers: [layer.id],
-            });
-            break;
-          case LayerType.Vector:
-            updatedLayers.push({
-              id: layer.id,
-              name: layer.name,
-              type: layer.type,
-              selected: false,
-              deleted: false,
-              isInitialLayer: true,
-            });
-            layer.operations.forEach((operation) => {
-              if (operation.tool === Tool.Pen) {
-                updatedHistory.push({
-                  operation: Operation.FreeDraw,
-                  tool: operation.tool,
-                  points: operation.points,
-                  color: operation.color,
-                  layers: [layer.id],
-                });
-              } else {
-                updatedHistory.push({
-                  operation: Operation.Erase,
-                  tool: operation.tool,
-                  points: operation.points,
-                  layers: [layer.id],
-                });
-              }
-            });
-            break;
+                name: layer.name,
+                type: layer.type,
+                selected: false,
+                deleted: false,
+                isInitialLayer: false, // TODO want to replace it later
+              });
+              updatedHistory.push({
+                operation: Operation.Import,
+                image: {
+                  id: layer.id,
+                  src: imageData!,
+                  x: layer.x!,
+                  y: layer.y!,
+                },
+                layers: [layer.id],
+              });
+              break;
+            case LayerType.Vector:
+              updatedLayers.push({
+                id: layer.id,
+                name: layer.name,
+                type: layer.type,
+                selected: false,
+                deleted: false,
+                isInitialLayer: true,
+              });
+              layer.operations!.forEach(
+                (operation: {
+                  tool: Tool;
+                  color?: string;
+                  points: number[];
+                }) => {
+                  if (operation.tool === Tool.Pen) {
+                    updatedHistory.push({
+                      operation: Operation.FreeDraw,
+                      tool: operation.tool,
+                      points: operation.points,
+                      color: operation.color,
+                      layers: [layer.id],
+                    });
+                  } else {
+                    updatedHistory.push({
+                      operation: Operation.Erase,
+                      tool: operation.tool,
+                      points: operation.points,
+                      layers: [layer.id],
+                    });
+                  }
+                }
+              );
+              break;
+          }
         }
-      });
+      );
       console.debug({
         updatedLayers,
         updatedHistory,
@@ -641,8 +717,8 @@ export default function Home() {
         id="file"
         ref={loadFileRef}
         style={{ display: "none" }}
-        onChange={(e) => {
-          loadFile(e.target.files);
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          loadFile(e.target.files!);
         }}
       />
 
@@ -651,8 +727,8 @@ export default function Home() {
         id="file"
         ref={importFileRef}
         style={{ display: "none" }}
-        onChange={(e) => {
-          handleImportFiles(e.target.files);
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          handleImportFiles(e.target.files!);
         }}
       />
 
@@ -674,7 +750,7 @@ export default function Home() {
           <select
             value={tool}
             onChange={(e) => {
-              setTool(e.target.value);
+              setTool(e.target.value as Tool);
             }}
           >
             <option value={Tool.Pen}>Pen</option>
@@ -784,7 +860,13 @@ export default function Home() {
                 .map((historyOperation, i) => {
                   switch (historyOperation.tool) {
                     case Tool.Fill:
-                      return <Image key={i} image={historyOperation.image} />;
+                      return (
+                        <Image
+                          key={i}
+                          alt={historyOperation.image!.id}
+                          image={historyOperation.fillImageData!}
+                        />
+                      );
                     case Tool.Eraser:
                     case Tool.Pen:
                       return (
@@ -816,7 +898,7 @@ export default function Home() {
                   }
                 })
                 .map((historyOperation, i) => {
-                  let image = historyOperation.image;
+                  let image = historyOperation.image!;
                   if (imageRendered[image.id]) {
                     return null;
                   }
@@ -825,12 +907,12 @@ export default function Home() {
                     if (history[j].image == null) {
                       continue;
                     }
-                    if (history[j].image.id !== image.id) {
+                    if (history[j].image!.id !== image.id) {
                       continue;
                     }
                     if (history[j].operation === Operation.Drag) {
-                      image.x = history[j].image.x;
-                      image.y = history[j].image.y;
+                      image.x = history[j].image!.x;
+                      image.y = history[j].image!.y;
                       break;
                     }
                   }
