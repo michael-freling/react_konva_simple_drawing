@@ -1,9 +1,17 @@
 import Konva from "konva";
 import React from "react";
-import { Stage, Layer, Line, Text, Group } from "react-konva";
+import { Stage, Layer, Line, Text, Group, Image } from "react-konva";
+import useImage from "use-image";
+
+enum Tool {
+  Pen = "pen",
+  Eraser = "eraser",
+  Move = "Move",
+}
 
 enum LayerType {
   Vector = "vector",
+  Image = "image",
 }
 
 type BaseLayerProps = {
@@ -14,20 +22,26 @@ type BaseLayerProps = {
   isSelected: boolean;
 };
 
-enum Tool {
-  Pen = "pen",
-  Eraser = "eraser",
-}
-
 type FreeDrawLine = {
   tool: Tool;
   color: string;
   points: number[];
 };
+
 type VectorLayerProps = BaseLayerProps & {
+  type: LayerType.Vector;
   lines: FreeDrawLine[];
 };
-type ImageLayerProps = BaseLayerProps;
+
+type ImageLayerProps = BaseLayerProps & {
+  type: LayerType.Image;
+  image: {
+    id: string;
+    dataURL: string;
+    x: number;
+    y: number;
+  };
+};
 
 type LayerProps = VectorLayerProps | ImageLayerProps;
 
@@ -52,12 +66,47 @@ function VectorLayer({ id, lines }: VectorLayerProps) {
   );
 }
 
+function ImageLayer({
+  id,
+  draggable,
+  image,
+  setPosition,
+}: ImageLayerProps & {
+  draggable: boolean;
+  setPosition: ({ x, y }: { x: number; y: number }) => void;
+}) {
+  const [img] = useImage(image.dataURL);
+
+  return (
+    <Image
+      key={id}
+      image={img}
+      alt=""
+      x={image.x}
+      y={image.y}
+      draggable={draggable}
+      onDragEnd={(e) => {
+        // https://konvajs.org/docs/react/Drag_And_Drop.html
+        setPosition({
+          x: e.target.x(),
+          y: e.target.y(),
+        });
+      }}
+    />
+  );
+}
+
 interface Command {
   run(): void;
   undo(): void;
 }
 
 export default function App() {
+  // Import
+  // https://konvajs.org/docs/react/Images.html
+  // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
+  const importFileRef = React.useRef<HTMLInputElement | null>(null);
+
   const [history, setHistory] = React.useState<Command[]>([]);
   const [historyIndex, setHistoryIndex] = React.useState(0);
   const [layers, setLayers] = React.useState<LayerProps[]>([
@@ -87,16 +136,25 @@ export default function App() {
       this.lines = lines.concat();
     }
 
+    getLayer(): VectorLayerProps {
+      const layer = layers[this.layerIndex];
+      if (layer.type !== LayerType.Vector) {
+        throw new Error("Unsupported layer for free draw");
+      }
+      return layer;
+    }
+
     undo() {
-      layers[this.layerIndex].lines = layers[this.layerIndex].lines.slice(
-        0,
-        this.lines.length - 1
-      );
+      const layer = this.getLayer();
+      layer.lines = layer.lines.slice(0, this.lines.length - 1);
+      layers[this.layerIndex] = layer;
       setLayers([...layers]);
     }
 
     run() {
-      layers[this.layerIndex].lines = this.lines;
+      const layer = this.getLayer();
+      layer.lines = this.lines;
+      layers[this.layerIndex] = layer;
       setLayers([...layers]);
     }
   }
@@ -107,22 +165,38 @@ export default function App() {
   };
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
+      return;
+    }
+    if (currentLayer.type === LayerType.Image) {
+      return;
+    }
+
     setIsDrawing(true);
     const point = e.target.getStage()!.getPointerPosition()!;
 
-    layers[currentLayerIndex].lines.push({
+    currentLayer.lines.push({
       tool,
       color,
       points: [point.x, point.y],
     });
+    layers[currentLayerIndex] = currentLayer;
     setLayers([...layers]);
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
+      return;
+    }
+    if (currentLayer.type === LayerType.Image) {
+      return;
+    }
+
     // no drawing - skipping
     if (!isDrawing) {
       return;
     }
+
     const point = e.target.getStage()!.getPointerPosition()!;
 
     const lines = currentLayer.lines;
@@ -130,20 +204,21 @@ export default function App() {
     lastLine.points = lastLine.points.concat([point.x, point.y]);
 
     lines.splice(lines.length - 1, 1, lastLine);
-    layers[currentLayerIndex].lines = lines;
+    currentLayer.lines = lines;
+    layers[currentLayerIndex] = currentLayer;
     setLayers([...layers]);
   };
 
   const handleMouseUp = () => {
-    setIsDrawing(false);
-    switch (tool) {
-      case Tool.Pen:
-      case Tool.Eraser:
-        addToHistory(
-          new FreeDrawCommand(currentLayerIndex, currentLayer.lines)
-        );
-        break;
+    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
+      return;
     }
+    if (currentLayer.type === LayerType.Image) {
+      return;
+    }
+
+    setIsDrawing(false);
+    addToHistory(new FreeDrawCommand(currentLayerIndex, currentLayer.lines));
   };
 
   const handleUndo = () => {
@@ -184,15 +259,40 @@ export default function App() {
     }
   }
 
-  const handleAddLayer = (layerType: LayerType) => {
-    const newLayer: LayerProps = {
-      id: "layer-" + (layers.length + 1),
-      name: "Layer " + (layers.length + 1),
-      type: layerType,
-      isCurrent: false,
+  const createLayer = (
+    props: Partial<LayerProps> & {
+      type: LayerType;
+    }
+  ): LayerProps => {
+    const layerId = "layer-" + (layers.length + 1);
+    const name = "Layer " + (layers.length + 1);
+    const defaultProps = {
+      id: layerId,
+      name,
       isSelected: false,
-      lines: [],
+      isCurrent: false,
     };
+    switch (props.type) {
+      case LayerType.Vector:
+        return {
+          ...defaultProps,
+          lines: [],
+          ...props,
+        } as VectorLayerProps;
+      case LayerType.Image:
+        return {
+          ...defaultProps,
+          image: {},
+          ...props,
+        } as ImageLayerProps;
+    }
+  };
+
+  const handleAddLayer = (layerType: LayerType) => {
+    let newLayer: LayerProps = createLayer({
+      type: layerType,
+    });
+
     const command = new AddLayerCommand(layers, newLayer);
     addToHistory(command);
     command.run();
@@ -241,9 +341,135 @@ export default function App() {
     command.run();
   };
 
+  class PromiseFileReader {
+    fileReader: FileReader;
+
+    constructor() {
+      this.fileReader = new FileReader();
+    }
+
+    readAsDataURL(file: File): Promise<string> {
+      return new Promise((resolve, reject) => {
+        this.fileReader.onload = (e: ProgressEvent<FileReader>) => {
+          resolve(e.target!.result as string);
+        };
+        this.fileReader.readAsDataURL(file);
+      });
+    }
+  }
+
+  class ImportImageFilesCommand implements Command {
+    newLayer: ImageLayerProps;
+
+    constructor(newLayer: ImageLayerProps) {
+      this.newLayer = newLayer;
+    }
+
+    run() {
+      setTool(Tool.Move);
+      this.newLayer.isCurrent = true;
+      setLayers([
+        ...layers.map((layer) => {
+          layer.isCurrent = false;
+          return layer;
+        }),
+        this.newLayer,
+      ]);
+    }
+
+    undo() {
+      const newLayers = layers.filter((layer) => layer.id !== this.newLayer.id);
+      if (this.newLayer.isCurrent) {
+        newLayers[0].isCurrent = true;
+      }
+      setLayers([...newLayers]);
+    }
+  }
+
+  const handleImportImageFiles = async (files: FileList) => {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      if (!file.type.startsWith("image/")) {
+        continue;
+      }
+
+      const fileReader = new PromiseFileReader();
+      const dataURL = await fileReader.readAsDataURL(file);
+      const layer: ImageLayerProps = createLayer({
+        name: file.name,
+        type: LayerType.Image,
+        image: {
+          id: file.name,
+          dataURL,
+          x: 0,
+          y: 0,
+        },
+      }) as ImageLayerProps;
+      const command = new ImportImageFilesCommand(layer);
+      command.run();
+      addToHistory(command);
+    }
+  };
+
+  class MoveCommand implements Command {
+    layerIndex: number;
+    position: {
+      x: number;
+      y: number;
+    };
+    originalPosition: {
+      x: number;
+      y: number;
+    };
+
+    constructor(
+      layerIndex: number,
+      { x, y }: { x: number; y: number },
+      originalPosition: { x: number; y: number }
+    ) {
+      this.layerIndex = layerIndex;
+      this.position = { x, y };
+      this.originalPosition = originalPosition;
+    }
+
+    run() {
+      const imageLayer = layers[this.layerIndex] as ImageLayerProps;
+      imageLayer.image.x = this.position.x;
+      imageLayer.image.y = this.position.y;
+      setLayers([...layers]);
+    }
+
+    undo() {
+      const imageLayer = layers[this.layerIndex] as ImageLayerProps;
+      imageLayer.image.x = this.originalPosition.x;
+      imageLayer.image.y = this.originalPosition.y;
+      setLayers([...layers]);
+    }
+  }
+
   return (
     <div>
+      <input
+        type="file"
+        id="file"
+        ref={importFileRef}
+        style={{ display: "none" }}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          handleImportImageFiles(e.target.files!);
+        }}
+      />
+
       <ul style={{ display: "inline-block" }}>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button
+            onClick={() => {
+              importFileRef.current?.click();
+            }}
+          >
+            Import an image
+          </button>
+        </li>
         <li style={{ display: "inline", padding: 2 }}>
           <select
             value={tool}
@@ -253,6 +479,7 @@ export default function App() {
           >
             <option value={Tool.Pen}>Pen</option>
             <option value={Tool.Eraser}>Eraser</option>
+            <option value={Tool.Move}>Move a layer</option>
           </select>
         </li>
         <li style={{ display: "inline", padding: 2 }}>
@@ -324,13 +551,35 @@ export default function App() {
       >
         <Layer>
           <Text text="Just start drawing" x={5} y={30} />
-          {layers.map((layer) => {
+          {layers.map((layer, index) => {
             switch (layer.type) {
               case LayerType.Vector:
                 return (
                   <VectorLayer
                     key={layer.id}
                     {...(layer as VectorLayerProps)}
+                  />
+                );
+              case LayerType.Image:
+                return (
+                  <ImageLayer
+                    key={layer.id}
+                    draggable={layer.isCurrent && tool === Tool.Move}
+                    setPosition={({ x, y }) => {
+                      const imageLayer = layer as ImageLayerProps;
+                      const originalPosition = {
+                        x: imageLayer.image.x,
+                        y: imageLayer.image.y,
+                      };
+                      const command = new MoveCommand(
+                        index,
+                        { x, y },
+                        originalPosition
+                      );
+                      command.run();
+                      addToHistory(command);
+                    }}
+                    {...(layer as ImageLayerProps)}
                   />
                 );
             }
