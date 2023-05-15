@@ -842,7 +842,7 @@ export default function Home() {
 
           return (
             <Layer id={layer.id} key={layer.id}>
-              {history
+              {history 
                 .filter((historyOperation, i) => {
                   if (i >= historyStep) {
                     return false;
