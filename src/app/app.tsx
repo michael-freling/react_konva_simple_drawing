@@ -8,11 +8,15 @@ import {
   Tool,
   Operation,
   OperationType,
+  AppState,
+  ImageLayer,
+  ImageLayerProps,
 } from "@/components/type";
 import {
   newAddLayerCommand,
   newDeleteSelectedLayersCommand,
 } from "@/components/layer";
+import { newImportImageCommand } from "@/components/file";
 
 // function from https://stackoverflow.com/a/15832662/512042
 function downloadURI(uri: string, name: string) {
@@ -29,14 +33,9 @@ const URLImage = ({
   draggable,
   setImage,
 }: {
-  image: {
-    id: string;
-    src: string;
-    x: number;
-    y: number;
-  };
+  image: ImageLayerProps;
   draggable: boolean;
-  setImage: (props: { id: string; src: string; x: number; y: number }) => void;
+  setImage: (props: ImageLayerProps) => void;
 }) => {
   const [img] = useImage(image.src);
   return (
@@ -195,6 +194,15 @@ export default function Home() {
     currentLayers[layer.id] = layer;
   });
 
+  const appState: AppState = {
+    layers,
+    setLayers,
+    currentLayerId,
+    setCurrentLayerId,
+    tool,
+    setTool,
+  };
+
   // Import
   // https://konvajs.org/docs/react/Images.html
   // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
@@ -213,6 +221,10 @@ export default function Home() {
 
     setHistory([...newHistory, newOperation]);
     setHistoryStep(historyStep + 1);
+
+    if (newOperation.run != null) {
+      newOperation.run(appState);
+    }
   };
 
   // https://konvajs.org/docs/react/Undo-Redo.html
@@ -225,12 +237,7 @@ export default function Home() {
 
     const command = history[newHistoryStep];
     if (command.undo != null) {
-      command.undo({
-        layers,
-        setLayers,
-        currentLayerId,
-        setCurrentLayerId,
-      });
+      command.undo(appState);
     }
   };
 
@@ -240,12 +247,7 @@ export default function Home() {
     }
     const command = history[historyStep];
     if (command.run != null) {
-      command.run({
-        layers,
-        setLayers,
-        currentLayerId,
-        setCurrentLayerId,
-      });
+      command.run(appState);
       setHistoryStep(historyStep + 1);
       return;
     }
@@ -349,55 +351,9 @@ export default function Home() {
     importFileRef.current!.click();
   };
 
-  const newLayer = ({
-    name,
-    type,
-  }: {
-    name: string;
-    type: LayerType;
-  }): Layer => {
-    const layerId = "layer-" + (layers.length + 1);
-    return {
-      id: layerId,
-      selected: false,
-      isInitialLayer: false,
-      name,
-      type,
-    };
-  };
-
   const handleImportFiles = (files: FileList) => {
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-
-      if (!file.type.startsWith("image/")) {
-        continue;
-      }
-
-      const reader = new FileReader();
-      reader.onload = (e: ProgressEvent<FileReader>) => {
-        setTool(Tool.Move);
-
-        const layer = newLayer({
-          name: file.name,
-          type: LayerType.Image,
-        });
-        setLayers([...layers, layer]);
-
-        addToHistory({
-          operation: Operation.Import,
-          image: {
-            id: file.name,
-            src: e.target!.result as string,
-            x: 0,
-            y: 0,
-          },
-          layers: [layer.id],
-        });
-        setCurrentLayerId(layer.id);
-      };
-      reader.readAsDataURL(file);
-    }
+    const command = newImportImageCommand(files);
+    addToHistory(command);
   };
 
   // https://codesandbox.io/s/jq5hm?file=/index.js:418-584
@@ -416,12 +372,6 @@ export default function Home() {
       type: layerType,
     });
     const command = newAddLayerCommand(layer, currentLayerId);
-    command!.run({
-      layers,
-      setLayers,
-      currentLayerId,
-      setCurrentLayerId,
-    });
     addToHistory(command);
   };
 
@@ -437,12 +387,6 @@ export default function Home() {
     }
 
     addToHistory(command);
-    command.run({
-      layers,
-      setLayers,
-      currentLayerId,
-      setCurrentLayerId,
-    });
   };
 
   const handleSave = () => {
@@ -787,6 +731,31 @@ export default function Home() {
       >
         {Object.keys(currentLayers).map((id) => {
           const layer = currentLayers[id];
+          let image = null;
+          if (layer.type === LayerType.Image) {
+            const image = (layer as ImageLayer).image;
+            console.log(layer);
+            const updatedPosition = history
+              .filter((_, i) => i < historyStep)
+              .map((historyOperation, i) => {
+                let image = historyOperation.image!;
+                for (let j = historyStep - 1; j >= i; j--) {
+                  if (history[j].image == null) {
+                    continue;
+                  }
+                  if (history[j].image!.id !== image.id) {
+                    continue;
+                  }
+                  if (history[j].operation === Operation.Drag) {
+                    return history[j].image!;
+                  }
+                }
+              });
+            if (updatedPosition.length > 0) {
+              image.x = updatedPosition[0]?.x;
+              image.y = updatedPosition[0]?.y;
+            }
+          }
 
           return (
             <KonvaLayer id={layer.id} key={layer.id}>
@@ -834,56 +803,22 @@ export default function Home() {
                   }
                 })}
 
-              {history
-                .filter((historyOperation, i) => {
-                  if (i >= historyStep) {
-                    return false;
-                  }
-                  if (historyOperation.operation === Operation.Import) {
-                    return historyOperation.layers?.includes(layer.id);
-                  }
-                })
-                .map((historyOperation, i) => {
-                  let image = historyOperation.image!;
-                  if (imageRendered[image.id]) {
-                    return null;
-                  }
-
-                  for (let j = historyStep - 1; j >= i; j--) {
-                    if (history[j].image == null) {
-                      continue;
-                    }
-                    if (history[j].image!.id !== image.id) {
-                      continue;
-                    }
-                    if (history[j].operation === Operation.Drag) {
-                      image.x = history[j].image!.x;
-                      image.y = history[j].image!.y;
-                      break;
-                    }
-                  }
-                  imageRendered[image.id] = true;
-
-                  const draggable =
-                    layer.id === currentLayerId && tool === Tool.Move;
-
-                  return (
-                    <URLImage
-                      key={layer.id}
-                      image={image}
-                      draggable={draggable}
-                      setImage={(imageProps) => {
-                        addToHistory({
-                          operation: Operation.Drag,
-                          image: {
-                            ...historyOperation,
-                            ...imageProps,
-                          },
-                        });
-                      }}
-                    />
-                  );
-                })}
+              {image != null && (
+                <URLImage
+                  key={layer.id}
+                  image={image}
+                  draggable={layer.id === currentLayerId && tool === Tool.Move}
+                  setImage={(imageProps) => {
+                    addToHistory({
+                      operation: Operation.Drag,
+                      image: {
+                        ...image,
+                        ...imageProps,
+                      },
+                    });
+                  }}
+                />
+              )}
             </KonvaLayer>
           );
         })}

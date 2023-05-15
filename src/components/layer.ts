@@ -1,4 +1,23 @@
-import { AppState, Layer, Operation, OperationType } from "./type";
+import { AppState, Layer, LayerType, Operation, OperationType } from "./type";
+
+export const newLayer = ({
+  name,
+  type,
+  layers,
+}: {
+  name: string;
+  type: LayerType;
+  layers: Layer[];
+}): Layer => {
+  const layerId = "layer-" + (layers.length + 1);
+  return {
+    id: layerId,
+    selected: false,
+    isInitialLayer: false,
+    name,
+    type,
+  };
+};
 
 export function newAddLayerCommand(
   newLayer: Layer,

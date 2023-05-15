@@ -3,6 +3,8 @@ export type AppState = {
   setLayers: (layers: Layer[]) => void;
   currentLayerId: string;
   setCurrentLayerId: (layerId: string) => void;
+  tool: Tool;
+  setTool: (tool: Tool) => void;
 };
 
 export enum Tool {
@@ -32,9 +34,19 @@ export type Layer = {
   id: string;
   name: string;
   selected: boolean;
-  deleted: boolean; // for undo/redo
   isInitialLayer: boolean;
   type: LayerType;
+};
+
+export type ImageLayerProps = {
+  id: string;
+  src: string;
+  x: number;
+  y: number;
+};
+
+export type ImageLayer = Layer & {
+  image: ImageLayerProps;
 };
 
 // TODO: Rename OperationType to Command later
