@@ -18,12 +18,13 @@ enum Tool {
   Eraser = "eraser",
 }
 
+type FreeDrawLine = {
+  tool: Tool;
+  color: string;
+  points: number[];
+};
 type VectorLayerProps = LayerProps & {
-  lines: {
-    tool: Tool;
-    color: string;
-    points: number[];
-  }[];
+  lines: FreeDrawLine[];
 };
 
 function VectorLayer({ id, lines }: VectorLayerProps) {
@@ -46,7 +47,15 @@ function VectorLayer({ id, lines }: VectorLayerProps) {
     </Group>
   );
 }
+
+interface Command {
+  undo(): void;
+  redo(): void;
+}
+
 export default function App() {
+  const [history, setHistory] = React.useState<Command[]>([]);
+  const [historyIndex, setHistoryIndex] = React.useState(0);
   const [layers, setLayers] = React.useState<VectorLayerProps[]>([
     {
       id: "layer-1",
@@ -63,6 +72,34 @@ export default function App() {
 
   const currentLayer = layers.filter((layer) => layer.isCurrent)[0];
   const currentLayerIndex = layers.findIndex((layer) => layer.isCurrent);
+
+  class FreeDrawCommand implements Command {
+    layerIndex: number;
+    lines: FreeDrawLine[];
+
+    constructor(layerIndex: number, lines: FreeDrawLine[]) {
+      this.layerIndex = layerIndex;
+      this.lines = lines.concat();
+    }
+
+    undo() {
+      layers[this.layerIndex].lines = layers[this.layerIndex].lines.slice(
+        0,
+        this.lines.length - 1
+      );
+      setLayers([...layers]);
+    }
+
+    redo() {
+      layers[this.layerIndex].lines = this.lines;
+      setLayers([...layers]);
+    }
+  }
+
+  const addToHistory = (newCommand: Command) => {
+    setHistory([...history, newCommand]);
+    setHistoryIndex(historyIndex + 1);
+  };
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     setIsDrawing(true);
@@ -94,19 +131,57 @@ export default function App() {
 
   const handleMouseUp = () => {
     setIsDrawing(false);
+    switch (tool) {
+      case Tool.Pen:
+      case Tool.Eraser:
+        addToHistory(
+          new FreeDrawCommand(currentLayerIndex, currentLayer.lines)
+        );
+        break;
+    }
+  };
+
+  const handleUndo = () => {
+    if (historyIndex <= 0) {
+      return;
+    }
+
+    setHistoryIndex(historyIndex - 1);
+    const command = history[historyIndex - 1];
+    command.undo();
+  };
+
+  const handleRedo = () => {
+    if (historyIndex >= history.length) {
+      return;
+    }
+
+    const command = history[historyIndex];
+    command.redo();
+    setHistoryIndex(historyIndex + 1);
   };
 
   return (
     <div>
-      <select
-        value={tool}
-        onChange={(e) => {
-          setTool(e.target.value as Tool);
-        }}
-      >
-        <option value={Tool.Pen}>Pen</option>
-        <option value={Tool.Eraser}>Eraser</option>
-      </select>
+      <ul style={{ display: "inline-block" }}>
+        <li style={{ display: "inline", padding: 2 }}>
+          <select
+            value={tool}
+            onChange={(e) => {
+              setTool(e.target.value as Tool);
+            }}
+          >
+            <option value={Tool.Pen}>Pen</option>
+            <option value={Tool.Eraser}>Eraser</option>
+          </select>
+        </li>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button onClick={handleUndo}>undo</button>
+        </li>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button onClick={handleRedo}>redo</button>
+        </li>
+      </ul>
 
       <Stage
         width={window.innerWidth}
