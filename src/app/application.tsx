@@ -18,7 +18,6 @@ type BaseLayerProps = {
   id: string;
   name: string;
   type: LayerType;
-  isCurrent: boolean;
   isSelected: boolean;
 };
 
@@ -103,21 +102,39 @@ interface Command {
 
 type AppState = {
   layers: LayerProps[];
+  currentLayerIndex: number;
   history: {
     layers: LayerProps[];
+    currentLayerIndex: number;
   }[];
   historyIndex: number;
 };
 
 enum ActionType {
-  ImportImage = "import image",
   Undo = "undo",
   Redo = "redo",
+  AddLayer = "add layer",
+  SelectLayer = "select layer",
+  DeleteSelectedLayers = "delete layer",
+  ImportImage = "import image",
 }
 
 type ImportImageAction = {
   type: ActionType.ImportImage;
   newLayer: ImageLayerProps;
+};
+
+type AddLayerAction = {
+  type: ActionType.AddLayer;
+  layerType: LayerType;
+};
+
+type SelectLayerAction = {
+  type: ActionType.SelectLayer;
+  layerId: string;
+};
+type DeleteSelectedLayersAction = {
+  type: ActionType.DeleteSelectedLayers;
 };
 
 type AppAction =
@@ -127,32 +144,10 @@ type AppAction =
   | {
       type: ActionType.Redo;
     }
-  | ImportImageAction;
-
-function importImageReducer(
-  state: AppState,
-  action: ImportImageAction
-): AppState {
-  const newLayers = state.layers.map((layer) => {
-    return {
-      ...layer,
-      isCurrent: false,
-    };
-  });
-  action.newLayer.isCurrent = true;
-  let newState: AppState = {
-    ...state,
-    layers: [...newLayers, action.newLayer],
-    historyIndex: state.historyIndex + 1,
-  };
-  newState.history = [
-    ...state.history,
-    {
-      layers: newState.layers,
-    },
-  ];
-  return newState;
-}
+  | ImportImageAction
+  | AddLayerAction
+  | SelectLayerAction
+  | DeleteSelectedLayersAction;
 
 function undoReducer(state: AppState, action: AppAction): AppState {
   if (state.historyIndex <= 0) {
@@ -182,13 +177,127 @@ function redoReducer(state: AppState, action: AppAction): AppState {
   };
 }
 
+// https://stackoverflow.com/questions/48230773/how-to-create-a-partial-like-that-requires-a-single-property-to-be-set
+type AtLeast<T, K extends keyof T> = Partial<T> & Pick<T, K>;
+
+function addStateToHistory(
+  previousState: AppState,
+  newState: AtLeast<AppState, "layers">
+): AppState {
+  let currentLayerIndex = previousState.currentLayerIndex;
+  if (newState.currentLayerIndex != null) {
+    currentLayerIndex = newState.currentLayerIndex;
+  }
+
+  return {
+    ...previousState,
+    ...newState,
+    history: [
+      ...previousState.history,
+      {
+        layers: newState.layers,
+        currentLayerIndex,
+      },
+    ],
+    historyIndex: previousState.historyIndex + 1,
+  };
+}
+
+const createLayer = (
+  layers: LayerProps[],
+  props: Partial<LayerProps> & {
+    type: LayerType;
+  }
+): LayerProps => {
+  const layerId = "layer-" + (layers.length + 1);
+  const name = "Layer " + (layers.length + 1);
+  const defaultProps = {
+    id: layerId,
+    name,
+    isSelected: false,
+  };
+  switch (props.type) {
+    case LayerType.Vector:
+      return {
+        ...defaultProps,
+        lines: [],
+        ...props,
+      } as VectorLayerProps;
+    case LayerType.Image:
+      return {
+        ...defaultProps,
+        image: {},
+        ...props,
+      } as ImageLayerProps;
+  }
+};
+
+function addLayerReducer(state: AppState, action: AddLayerAction): AppState {
+  const newLayer = createLayer(state.layers, {
+    type: action.layerType,
+  });
+
+  return addStateToHistory(state, {
+    layers: [...state.layers, newLayer],
+  });
+}
+
+function selectLayerReducer(
+  state: AppState,
+  action: SelectLayerAction
+): AppState {
+  const index = state.layers.findIndex((layer) => layer.id === action.layerId);
+  state.layers[index].isSelected = !state.layers[index].isSelected;
+  return {
+    ...state,
+    layers: state.layers,
+    currentLayerIndex: index,
+  };
+}
+
+function deleteSelectedLayersReducer(
+  state: AppState,
+  action: DeleteSelectedLayersAction
+): AppState {
+  const layers = state.layers;
+  const selectedLayers = layers.filter((layer) => layer.isSelected);
+  if (selectedLayers.length === 0) {
+    return state;
+  }
+
+  const newLayers = layers.filter((layer) => !layer.isSelected);
+  if (selectedLayers.length === 0) {
+    return state;
+  }
+
+  const currentLayer = layers[state.currentLayerIndex];
+  let currentLayerIndex = state.currentLayerIndex;
+  if (newLayers.filter((layer) => layer.id === currentLayer.id).length === 0) {
+    currentLayerIndex = 0;
+  }
+
+  return addStateToHistory(state, {
+    layers: newLayers,
+    currentLayerIndex: 0,
+  });
+}
+
+function importImageReducer(
+  state: AppState,
+  action: ImportImageAction
+): AppState {
+  return addStateToHistory(state, {
+    layers: [...state.layers, action.newLayer],
+    currentLayerIndex: state.layers.length,
+  });
+}
+
 export default function App() {
   const initialLayers: LayerProps[] = [
     {
       id: "layer-1",
       name: "Layer 1",
       type: LayerType.Vector,
-      isCurrent: true,
       isSelected: false,
       lines: [],
     },
@@ -204,16 +313,30 @@ export default function App() {
           return undoReducer(state, action);
         case ActionType.Redo:
           return redoReducer(state, action);
+        case ActionType.AddLayer:
+          return addLayerReducer(state, action);
+        case ActionType.SelectLayer:
+          return selectLayerReducer(state, action);
+        case ActionType.DeleteSelectedLayers:
+          return deleteSelectedLayersReducer(state, action);
       }
     },
     {
       layers: initialLayers,
-      history: [{ layers: initialLayers }],
+      currentLayerIndex: 0,
+      history: [
+        {
+          layers: initialLayers,
+          currentLayerIndex: 0,
+        },
+      ],
       historyIndex: 0,
     }
   );
 
   const layers = state.layers;
+  const currentLayer = layers[state.currentLayerIndex];
+  const currentLayerIndex = state.currentLayerIndex;
 
   // Import
   // https://konvajs.org/docs/react/Images.html
@@ -223,9 +346,6 @@ export default function App() {
   const [tool, setTool] = React.useState(Tool.Pen);
   const [color] = React.useState("#00ff00");
   const [isDrawing, setIsDrawing] = React.useState(false);
-
-  const currentLayer = layers.filter((layer) => layer.isCurrent)[0];
-  const currentLayerIndex = layers.findIndex((layer) => layer.isCurrent);
 
   class FreeDrawCommand implements Command {
     layerIndex: number;
@@ -321,106 +441,6 @@ export default function App() {
     addToHistory(new FreeDrawCommand(currentLayerIndex, currentLayer.lines));
   };
 
-  class AddLayerCommand implements Command {
-    layers: LayerProps[];
-    newLayer: LayerProps;
-
-    constructor(layers: LayerProps[], newLayer: LayerProps) {
-      this.layers = layers.concat();
-      this.newLayer = newLayer;
-    }
-
-    undo() {
-      setLayers([...this.layers]);
-    }
-
-    run() {
-      setLayers([...this.layers, this.newLayer]);
-    }
-  }
-
-  const createLayer = (
-    props: Partial<LayerProps> & {
-      type: LayerType;
-    }
-  ): LayerProps => {
-    const layerId = "layer-" + (layers.length + 1);
-    const name = "Layer " + (layers.length + 1);
-    const defaultProps = {
-      id: layerId,
-      name,
-      isSelected: false,
-      isCurrent: false,
-    };
-    switch (props.type) {
-      case LayerType.Vector:
-        return {
-          ...defaultProps,
-          lines: [],
-          ...props,
-        } as VectorLayerProps;
-      case LayerType.Image:
-        return {
-          ...defaultProps,
-          image: {},
-          ...props,
-        } as ImageLayerProps;
-    }
-  };
-
-  const handleAddLayer = (layerType: LayerType) => {
-    let newLayer: LayerProps = createLayer({
-      type: layerType,
-    });
-
-    const command = new AddLayerCommand(layers, newLayer);
-    addToHistory(command);
-    command.run();
-  };
-
-  class DeleteSelectedLayersCommand implements Command {
-    layers: LayerProps[];
-    newLayers: LayerProps[];
-
-    constructor(layers: LayerProps[], newLayers: LayerProps[]) {
-      this.layers = layers.concat();
-      this.newLayers = newLayers.concat();
-    }
-
-    undo() {
-      setLayers([...this.layers]);
-    }
-
-    run() {
-      if (
-        this.newLayers.filter((layer) => layer.id === currentLayer.id)
-          .length === 0
-      ) {
-        let newLayers = this.newLayers.concat();
-        newLayers[0].isCurrent = true;
-        setLayers([...newLayers]);
-      } else {
-        setLayers([...this.newLayers]);
-      }
-    }
-  }
-
-  const handleDeleteSelectedLayers = () => {
-    const selectedLayers = layers.filter((layer) => layer.isSelected);
-    if (selectedLayers.length === 0) {
-      return;
-    }
-
-    const newLayers = layers.filter((layer) => !layer.isSelected);
-    if (selectedLayers.length === 0) {
-      return;
-    }
-
-    const command = new DeleteSelectedLayersCommand(layers, newLayers);
-    addToHistory(command);
-    command.run();
-  };
-
   class PromiseFileReader {
     fileReader: FileReader;
 
@@ -448,7 +468,7 @@ export default function App() {
 
       const fileReader = new PromiseFileReader();
       const dataURL = await fileReader.readAsDataURL(file);
-      const layer: ImageLayerProps = createLayer({
+      const layer: ImageLayerProps = createLayer(layers, {
         name: file.name,
         type: LayerType.Image,
         image: {
@@ -560,21 +580,30 @@ export default function App() {
         <li style={{ display: "inline-block" }}>
           <button
             onClick={() => {
-              handleAddLayer(LayerType.Vector);
+              dispatch({
+                type: ActionType.AddLayer,
+                layerType: LayerType.Vector,
+              });
             }}
           >
             Add a vector layer
           </button>
         </li>
         <li style={{ display: "inline-block" }}>
-          <button onClick={handleDeleteSelectedLayers}>
+          <button
+            onClick={() => {
+              dispatch({
+                type: ActionType.DeleteSelectedLayers,
+              });
+            }}
+          >
             Delete select layers
           </button>
         </li>
       </ul>
 
       <ul style={{ padding: 2 }}>
-        {layers.map((layer, index) => {
+        {layers.map((layer) => {
           return (
             <li key={layer.id} style={{ padding: 2 }}>
               <input
@@ -582,15 +611,10 @@ export default function App() {
                 id={layer.id}
                 checked={layer.isSelected}
                 onChange={() => {
-                  layers.forEach((layer, j) => {
-                    if (index === j) {
-                      layers[index].isCurrent = true;
-                    } else {
-                      layers[j].isCurrent = false;
-                    }
+                  dispatch({
+                    type: ActionType.SelectLayer,
+                    layerId: layer.id,
                   });
-                  layers[index].isSelected = !layers[index].isSelected;
-                  setLayers([...layers]);
                 }}
               />
               <label htmlFor={layer.id}>
@@ -630,7 +654,9 @@ export default function App() {
                 return (
                   <ImageLayer
                     key={layer.id}
-                    draggable={layer.isCurrent && tool === Tool.Move}
+                    draggable={
+                      layer.id === currentLayer.id && tool === Tool.Move
+                    }
                     setPosition={({ x, y }) => {
                       const imageLayer = layer as ImageLayerProps;
                       const originalPosition = {
