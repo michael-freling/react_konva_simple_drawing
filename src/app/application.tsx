@@ -101,15 +101,89 @@ interface Command {
   undo(): void;
 }
 
-export default function App() {
-  // Import
-  // https://konvajs.org/docs/react/Images.html
-  // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
-  const importFileRef = React.useRef<HTMLInputElement | null>(null);
+type AppState = {
+  layers: LayerProps[];
+  history: {
+    layers: LayerProps[];
+  }[];
+  historyIndex: number;
+};
 
-  const [history, setHistory] = React.useState<Command[]>([]);
-  const [historyIndex, setHistoryIndex] = React.useState(0);
-  const [layers, setLayers] = React.useState<LayerProps[]>([
+enum ActionType {
+  ImportImage = "import image",
+  Undo = "undo",
+  Redo = "redo",
+}
+
+type ImportImageAction = {
+  type: ActionType.ImportImage;
+  newLayer: ImageLayerProps;
+};
+
+type AppAction =
+  | {
+      type: ActionType.Undo;
+    }
+  | {
+      type: ActionType.Redo;
+    }
+  | ImportImageAction;
+
+function importImageReducer(
+  state: AppState,
+  action: ImportImageAction
+): AppState {
+  const newLayers = state.layers.map((layer) => {
+    return {
+      ...layer,
+      isCurrent: false,
+    };
+  });
+  action.newLayer.isCurrent = true;
+  let newState: AppState = {
+    ...state,
+    layers: [...newLayers, action.newLayer],
+    historyIndex: state.historyIndex + 1,
+  };
+  newState.history = [
+    ...state.history,
+    {
+      layers: newState.layers,
+    },
+  ];
+  return newState;
+}
+
+function undoReducer(state: AppState, action: AppAction): AppState {
+  if (state.historyIndex <= 0) {
+    return state;
+  }
+
+  const historyIndex = state.historyIndex - 1;
+  const previousState = state.history[historyIndex];
+  return {
+    ...state,
+    layers: previousState.layers,
+    historyIndex,
+  };
+}
+
+function redoReducer(state: AppState, action: AppAction): AppState {
+  if (state.historyIndex + 1 >= state.history.length) {
+    return state;
+  }
+
+  const historyIndex = state.historyIndex + 1;
+  const nextState = state.history[historyIndex];
+  return {
+    ...state,
+    layers: nextState.layers,
+    historyIndex,
+  };
+}
+
+export default function App() {
+  const initialLayers: LayerProps[] = [
     {
       id: "layer-1",
       name: "Layer 1",
@@ -118,7 +192,33 @@ export default function App() {
       isSelected: false,
       lines: [],
     },
-  ]);
+  ];
+  const [state, dispatch] = React.useReducer<
+    (state: AppState, action: AppAction) => AppState
+  >(
+    (state: AppState, action: AppAction) => {
+      switch (action.type) {
+        case ActionType.ImportImage:
+          return importImageReducer(state, action);
+        case ActionType.Undo:
+          return undoReducer(state, action);
+        case ActionType.Redo:
+          return redoReducer(state, action);
+      }
+    },
+    {
+      layers: initialLayers,
+      history: [{ layers: initialLayers }],
+      historyIndex: 0,
+    }
+  );
+
+  const layers = state.layers;
+
+  // Import
+  // https://konvajs.org/docs/react/Images.html
+  // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
+  const importFileRef = React.useRef<HTMLInputElement | null>(null);
 
   const [tool, setTool] = React.useState(Tool.Pen);
   const [color] = React.useState("#00ff00");
@@ -219,26 +319,6 @@ export default function App() {
 
     setIsDrawing(false);
     addToHistory(new FreeDrawCommand(currentLayerIndex, currentLayer.lines));
-  };
-
-  const handleUndo = () => {
-    if (historyIndex <= 0) {
-      return;
-    }
-
-    setHistoryIndex(historyIndex - 1);
-    const command = history[historyIndex - 1];
-    command.undo();
-  };
-
-  const handleRedo = () => {
-    if (historyIndex >= history.length) {
-      return;
-    }
-
-    const command = history[historyIndex];
-    command.run();
-    setHistoryIndex(historyIndex + 1);
   };
 
   class AddLayerCommand implements Command {
@@ -358,34 +438,6 @@ export default function App() {
     }
   }
 
-  class ImportImageFilesCommand implements Command {
-    newLayer: ImageLayerProps;
-
-    constructor(newLayer: ImageLayerProps) {
-      this.newLayer = newLayer;
-    }
-
-    run() {
-      setTool(Tool.Move);
-      this.newLayer.isCurrent = true;
-      setLayers([
-        ...layers.map((layer) => {
-          layer.isCurrent = false;
-          return layer;
-        }),
-        this.newLayer,
-      ]);
-    }
-
-    undo() {
-      const newLayers = layers.filter((layer) => layer.id !== this.newLayer.id);
-      if (this.newLayer.isCurrent) {
-        newLayers[0].isCurrent = true;
-      }
-      setLayers([...newLayers]);
-    }
-  }
-
   const handleImportImageFiles = async (files: FileList) => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -406,9 +458,11 @@ export default function App() {
           y: 0,
         },
       }) as ImageLayerProps;
-      const command = new ImportImageFilesCommand(layer);
-      command.run();
-      addToHistory(command);
+      dispatch({
+        type: ActionType.ImportImage,
+        newLayer: layer,
+      });
+      setTool(Tool.Move);
     }
   };
 
@@ -483,10 +537,22 @@ export default function App() {
           </select>
         </li>
         <li style={{ display: "inline", padding: 2 }}>
-          <button onClick={handleUndo}>undo</button>
+          <button
+            onClick={() => {
+              dispatch({ type: ActionType.Undo });
+            }}
+          >
+            undo
+          </button>
         </li>
         <li style={{ display: "inline", padding: 2 }}>
-          <button onClick={handleRedo}>redo</button>
+          <button
+            onClick={() => {
+              dispatch({ type: ActionType.Redo });
+            }}
+          >
+            redo
+          </button>
         </li>
       </ul>
 
