@@ -117,11 +117,21 @@ enum ActionType {
   SelectLayer = "select layer",
   DeleteSelectedLayers = "delete layer",
   ImportImage = "import image",
+  MoveImageLayer = "move image layer",
 }
 
 type ImportImageAction = {
   type: ActionType.ImportImage;
   newLayer: ImageLayerProps;
+};
+
+type MoveImageLayerAction = {
+  type: ActionType.MoveImageLayer;
+  layerId: string;
+  newPosition: {
+    x: number;
+    y: number;
+  };
 };
 
 type AddLayerAction = {
@@ -147,7 +157,8 @@ type AppAction =
   | ImportImageAction
   | AddLayerAction
   | SelectLayerAction
-  | DeleteSelectedLayersAction;
+  | DeleteSelectedLayersAction
+  | MoveImageLayerAction;
 
 function undoReducer(state: AppState, action: AppAction): AppState {
   if (state.historyIndex <= 0) {
@@ -292,6 +303,35 @@ function importImageReducer(
   });
 }
 
+function MoveImageLayerReducer(
+  state: AppState,
+  action: MoveImageLayerAction
+): AppState {
+  const layerIndex = state.layers.findIndex(
+    (layer) => layer.id === action.layerId
+  );
+
+  if (layerIndex === -1) {
+    return state;
+  }
+
+  const newLayer = {
+    ...state.layers[layerIndex],
+    image: {
+      ...(state.layers[layerIndex] as ImageLayerProps).image,
+      ...action.newPosition,
+    },
+  } as ImageLayerProps;
+
+  return addStateToHistory(state, {
+    layers: [
+      ...state.layers.slice(0, layerIndex),
+      newLayer,
+      ...state.layers.slice(layerIndex + 1, state.layers.length),
+    ],
+  });
+}
+
 export default function App() {
   const initialLayers: LayerProps[] = [
     {
@@ -306,19 +346,26 @@ export default function App() {
     (state: AppState, action: AppAction) => AppState
   >(
     (state: AppState, action: AppAction) => {
+      // TODO: Replace these switch case with a factory method
+      // by figuring out how to define signatures for different compatible types in TypeScript
       switch (action.type) {
-        case ActionType.ImportImage:
-          return importImageReducer(state, action);
+        // no need to undo
         case ActionType.Undo:
           return undoReducer(state, action);
         case ActionType.Redo:
           return redoReducer(state, action);
-        case ActionType.AddLayer:
-          return addLayerReducer(state, action);
         case ActionType.SelectLayer:
           return selectLayerReducer(state, action);
+
+        // need to undo and redo
+        case ActionType.ImportImage:
+          return importImageReducer(state, action);
+        case ActionType.AddLayer:
+          return addLayerReducer(state, action);
         case ActionType.DeleteSelectedLayers:
           return deleteSelectedLayersReducer(state, action);
+        case ActionType.MoveImageLayer:
+          return MoveImageLayerReducer(state, action);
       }
     },
     {
@@ -486,42 +533,6 @@ export default function App() {
     }
   };
 
-  class MoveCommand implements Command {
-    layerIndex: number;
-    position: {
-      x: number;
-      y: number;
-    };
-    originalPosition: {
-      x: number;
-      y: number;
-    };
-
-    constructor(
-      layerIndex: number,
-      { x, y }: { x: number; y: number },
-      originalPosition: { x: number; y: number }
-    ) {
-      this.layerIndex = layerIndex;
-      this.position = { x, y };
-      this.originalPosition = originalPosition;
-    }
-
-    run() {
-      const imageLayer = layers[this.layerIndex] as ImageLayerProps;
-      imageLayer.image.x = this.position.x;
-      imageLayer.image.y = this.position.y;
-      setLayers([...layers]);
-    }
-
-    undo() {
-      const imageLayer = layers[this.layerIndex] as ImageLayerProps;
-      imageLayer.image.x = this.originalPosition.x;
-      imageLayer.image.y = this.originalPosition.y;
-      setLayers([...layers]);
-    }
-  }
-
   return (
     <div>
       <input
@@ -658,18 +669,14 @@ export default function App() {
                       layer.id === currentLayer.id && tool === Tool.Move
                     }
                     setPosition={({ x, y }) => {
-                      const imageLayer = layer as ImageLayerProps;
-                      const originalPosition = {
-                        x: imageLayer.image.x,
-                        y: imageLayer.image.y,
-                      };
-                      const command = new MoveCommand(
-                        index,
-                        { x, y },
-                        originalPosition
-                      );
-                      command.run();
-                      addToHistory(command);
+                      dispatch({
+                        type: ActionType.MoveImageLayer,
+                        layerId: layer.id,
+                        newPosition: {
+                          x,
+                          y,
+                        },
+                      });
                     }}
                     {...(layer as ImageLayerProps)}
                   />
