@@ -3,6 +3,8 @@ import React from "react";
 import { Stage, Layer, Line, Text, Group, Image } from "react-konva";
 import useImage from "use-image";
 
+type Color = string;
+
 enum Tool {
   Pen = "pen",
   Eraser = "eraser",
@@ -23,7 +25,7 @@ type BaseLayerProps = {
 
 type FreeDrawLine = {
   tool: Tool;
-  color: string;
+  color: Color;
   points: number[];
 };
 
@@ -95,11 +97,6 @@ function ImageLayer({
   );
 }
 
-interface Command {
-  run(): void;
-  undo(): void;
-}
-
 type AppState = {
   layers: LayerProps[];
   currentLayerIndex: number;
@@ -108,6 +105,7 @@ type AppState = {
     currentLayerIndex: number;
   }[];
   historyIndex: number;
+  isDrawing: boolean;
 };
 
 enum ActionType {
@@ -118,6 +116,7 @@ enum ActionType {
   DeleteSelectedLayers = "delete layer",
   ImportImage = "import image",
   MoveImageLayer = "move image layer",
+  DrawOnCanvas = "draw on canvas",
 }
 
 type ImportImageAction = {
@@ -147,6 +146,24 @@ type DeleteSelectedLayersAction = {
   type: ActionType.DeleteSelectedLayers;
 };
 
+enum MouseEventType {
+  Up = "Up",
+  Down = "Down",
+  Move = "Move",
+}
+
+type FreeDrawAction = {
+  type: ActionType.DrawOnCanvas;
+  mouseEventType: MouseEventType;
+  tool: Tool;
+  color: Color;
+
+  point: {
+    x: number;
+    y: number;
+  };
+};
+
 type AppAction =
   | {
       type: ActionType.Undo;
@@ -158,7 +175,8 @@ type AppAction =
   | AddLayerAction
   | SelectLayerAction
   | DeleteSelectedLayersAction
-  | MoveImageLayerAction;
+  | MoveImageLayerAction
+  | FreeDrawAction;
 
 function undoReducer(state: AppState, action: AppAction): AppState {
   if (state.historyIndex <= 0) {
@@ -332,6 +350,69 @@ function MoveImageLayerReducer(
   });
 }
 
+function drawReducer(state: AppState, action: FreeDrawAction): AppState {
+  // TODO: improve performance
+  let newState = JSON.parse(JSON.stringify(state));
+  const currentLayer = newState.layers[newState.currentLayerIndex];
+
+  switch (action.tool) {
+    case Tool.Pen:
+    case Tool.Eraser:
+      if (currentLayer.type !== LayerType.Vector) {
+        return state;
+      }
+
+      switch (action.mouseEventType) {
+        case MouseEventType.Down:
+          newState.isDrawing = true;
+          (currentLayer as VectorLayerProps).lines.push({
+            tool: action.tool,
+            color: action.color,
+            points: [action.point.x, action.point.y],
+          });
+          return newState;
+
+        case MouseEventType.Up:
+          if (!state.isDrawing) {
+            return state;
+          }
+
+          return addStateToHistory(state, {
+            layers: newState.layers,
+            isDrawing: false,
+          });
+
+        case MouseEventType.Move:
+          if (!state.isDrawing) {
+            return state;
+          }
+
+          const lines = currentLayer.lines;
+          let lastLine = lines[lines.length - 1];
+          lastLine.points = lastLine.points.concat([
+            action.point.x,
+            action.point.y,
+          ]);
+          lines.splice(lines.length - 1, 1, lastLine);
+          currentLayer.lines = lines;
+          newState.layers[state.currentLayerIndex] = currentLayer;
+          return newState;
+      }
+
+    case Tool.Move:
+      // TODO
+      switch (action.mouseEventType) {
+        case MouseEventType.Down:
+
+        case MouseEventType.Up:
+
+        case MouseEventType.Move:
+      }
+  }
+
+  return state;
+}
+
 export default function App() {
   const initialLayers: LayerProps[] = [
     {
@@ -366,6 +447,8 @@ export default function App() {
           return deleteSelectedLayersReducer(state, action);
         case ActionType.MoveImageLayer:
           return MoveImageLayerReducer(state, action);
+        case ActionType.DrawOnCanvas:
+          return drawReducer(state, action);
       }
     },
     {
@@ -378,12 +461,12 @@ export default function App() {
         },
       ],
       historyIndex: 0,
+      isDrawing: false,
     }
   );
 
   const layers = state.layers;
   const currentLayer = layers[state.currentLayerIndex];
-  const currentLayerIndex = state.currentLayerIndex;
 
   // Import
   // https://konvajs.org/docs/react/Images.html
@@ -391,101 +474,39 @@ export default function App() {
   const importFileRef = React.useRef<HTMLInputElement | null>(null);
 
   const [tool, setTool] = React.useState(Tool.Pen);
-  const [color] = React.useState("#00ff00");
-  const [isDrawing, setIsDrawing] = React.useState(false);
-
-  class FreeDrawCommand implements Command {
-    layerIndex: number;
-    lines: FreeDrawLine[];
-
-    constructor(layerIndex: number, lines: FreeDrawLine[]) {
-      this.layerIndex = layerIndex;
-      this.lines = lines.concat();
-    }
-
-    getLayer(): VectorLayerProps {
-      const layer = layers[this.layerIndex];
-      if (layer.type !== LayerType.Vector) {
-        throw new Error("Unsupported layer for free draw");
-      }
-      return layer;
-    }
-
-    undo() {
-      const layer = this.getLayer();
-      layer.lines = layer.lines.slice(0, this.lines.length - 1);
-      layers[this.layerIndex] = layer;
-      setLayers([...layers]);
-    }
-
-    run() {
-      const layer = this.getLayer();
-      layer.lines = this.lines;
-      layers[this.layerIndex] = layer;
-      setLayers([...layers]);
-    }
-  }
-
-  const addToHistory = (newCommand: Command) => {
-    setHistory([...history, newCommand]);
-    setHistoryIndex(historyIndex + 1);
-  };
+  const [color] = React.useState<Color>("#00ff00");
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
-      return;
-    }
-    if (currentLayer.type === LayerType.Image) {
-      return;
-    }
-
-    setIsDrawing(true);
     const point = e.target.getStage()!.getPointerPosition()!;
-
-    currentLayer.lines.push({
-      tool,
-      color,
-      points: [point.x, point.y],
+    dispatch({
+      type: ActionType.DrawOnCanvas,
+      mouseEventType: MouseEventType.Down,
+      color: color,
+      tool: tool,
+      point,
     });
-    layers[currentLayerIndex] = currentLayer;
-    setLayers([...layers]);
   };
 
   const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
-      return;
-    }
-    if (currentLayer.type === LayerType.Image) {
-      return;
-    }
-
-    // no drawing - skipping
-    if (!isDrawing) {
-      return;
-    }
-
     const point = e.target.getStage()!.getPointerPosition()!;
-
-    const lines = currentLayer.lines;
-    let lastLine = lines[lines.length - 1];
-    lastLine.points = lastLine.points.concat([point.x, point.y]);
-
-    lines.splice(lines.length - 1, 1, lastLine);
-    currentLayer.lines = lines;
-    layers[currentLayerIndex] = currentLayer;
-    setLayers([...layers]);
+    dispatch({
+      type: ActionType.DrawOnCanvas,
+      mouseEventType: MouseEventType.Move,
+      color: color,
+      tool: tool,
+      point,
+    });
   };
 
-  const handleMouseUp = () => {
-    if (tool !== Tool.Pen && tool !== Tool.Eraser) {
-      return;
-    }
-    if (currentLayer.type === LayerType.Image) {
-      return;
-    }
-
-    setIsDrawing(false);
-    addToHistory(new FreeDrawCommand(currentLayerIndex, currentLayer.lines));
+  const handleMouseUp = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    const point = e.target.getStage()!.getPointerPosition()!;
+    dispatch({
+      type: ActionType.DrawOnCanvas,
+      mouseEventType: MouseEventType.Up,
+      color: color,
+      tool: tool,
+      point,
+    });
   };
 
   class PromiseFileReader {
