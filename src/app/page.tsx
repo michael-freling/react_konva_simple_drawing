@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 
 // https://nextjs.org/docs/app/building-your-application/optimizing/lazy-loading#nextdynamic
 // const ClientApp = dynamic(() => import("./prototype"), {
-const ClientApp = dynamic(() => import("./application"), {
+const ClientApp = dynamic(() => import("../components/App"), {
   ssr: false,
 });
 
