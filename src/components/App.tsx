@@ -6,6 +6,7 @@ import {
   ActionType,
   AppAction,
   AppState,
+  AppStatusCode,
   Color,
   ImageLayerProps,
   LayerType,
@@ -70,7 +71,7 @@ function ImageLayer({
     <Image
       key={id}
       image={img}
-      alt=""
+      alt={"imageLayer-" + id}
       x={image.x}
       y={image.y}
       draggable={draggable}
@@ -163,6 +164,12 @@ export default function App() {
   };
 
   // @todo: Show an error message by the state.statusCode
+  let statusMessage;
+  switch (state.statusCode) {
+    case AppStatusCode.DeleteSelectedLayersNoLayer:
+      statusMessage = "Please keep at least one layer";
+  }
+
   return (
     <div>
       <input
@@ -173,7 +180,11 @@ export default function App() {
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           handleImportImageFiles(e.target.files!);
         }}
+        data-testid="importImageFile"
       />
+      {statusMessage != null && (
+        <span data-testid="statusMessage">{statusMessage}</span>
+      )}
 
       <ul style={{ display: "inline-block" }}>
         <li style={{ display: "inline", padding: 2 }}>
@@ -181,6 +192,7 @@ export default function App() {
             onClick={() => {
               importFileRef.current?.click();
             }}
+            data-testid="importImageButton"
           >
             Import an image
           </button>
@@ -191,6 +203,7 @@ export default function App() {
             onChange={(e) => {
               setTool(e.target.value as Tool);
             }}
+            data-testid="toolSelect"
           >
             <option value={Tool.Pen}>Pen</option>
             <option value={Tool.Eraser}>Eraser</option>
@@ -202,6 +215,7 @@ export default function App() {
             onClick={() => {
               dispatch({ type: ActionType.Undo });
             }}
+            data-testid="undoButton"
           >
             undo
           </button>
@@ -211,6 +225,7 @@ export default function App() {
             onClick={() => {
               dispatch({ type: ActionType.Redo });
             }}
+            data-testid="redoButton"
           >
             redo
           </button>
@@ -226,6 +241,7 @@ export default function App() {
                 layerType: LayerType.Vector,
               });
             }}
+            data-testid="addVectorLayerButton"
           >
             Add a vector layer
           </button>
@@ -237,17 +253,19 @@ export default function App() {
                 type: ActionType.DeleteSelectedLayers,
               });
             }}
+            data-testid="deleteSelectedLayersButton"
           >
             Delete select layers
           </button>
         </li>
       </ul>
 
-      <ul style={{ padding: 2 }}>
-        {layers.map((layer) => {
+      <ul style={{ padding: 2 }} data-testid="layerList">
+        {layers.map((layer, index) => {
           return (
             <li key={layer.id} style={{ padding: 2 }}>
               <input
+                data-testid={"layerCheckbox" + index}
                 type="checkbox"
                 id={layer.id}
                 checked={layer.isSelected}
