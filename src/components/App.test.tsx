@@ -111,6 +111,14 @@ describe("App", () => {
     );
   });
 
+  it.skip("export an image", () => {
+    // Skip this test case because of an error
+    // This is because document create an a element and click a link
+    // Error: Not implemented: navigation (except hash changes)
+    const { getByTestId } = render(<App />);
+    fireEvent.click(getByTestId("exportImageButton"));
+  });
+
   it("import an image", async () => {
     const { getByTestId } = render(<App />);
     expect(getByTestId("layerList").children).toHaveLength(1);

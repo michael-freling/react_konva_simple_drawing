@@ -30,9 +30,22 @@ class PromiseFileReader {
       this.fileReader.onload = (e: ProgressEvent<FileReader>) => {
         resolve(e.target!.result as string);
       };
+      this.fileReader.onerror = (e: ProgressEvent<FileReader>) => {
+        reject(this.fileReader.error);
+      };
       this.fileReader.readAsDataURL(file);
     });
   }
+}
+
+// function from https://stackoverflow.com/a/15832662/512042
+export function downloadURI(uri: string, name: string) {
+  var link = document.createElement("a");
+  link.download = name;
+  link.href = uri;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function VectorLayer({ id, lines }: VectorLayerProps) {
@@ -94,6 +107,7 @@ export default function App() {
   const layers = state.layers;
   const currentLayer = layers[state.currentLayerIndex];
 
+  const stageRef = React.useRef<Konva.Stage>(null);
   // Import
   // https://konvajs.org/docs/react/Images.html
   // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
@@ -133,6 +147,12 @@ export default function App() {
       tool: tool,
       point,
     });
+  };
+
+  const handleExportImage = () => {
+    const uri = stageRef.current!.toDataURL();
+    // we also can save uri as file
+    downloadURI(uri, "stage.png");
   };
 
   const handleImportImageFiles = async (files: FileList) => {
@@ -187,6 +207,11 @@ export default function App() {
       )}
 
       <ul style={{ display: "inline-block" }}>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button onClick={handleExportImage} data-testid="exportImageButton">
+            Export an image
+          </button>
+        </li>
         <li style={{ display: "inline", padding: 2 }}>
           <button
             onClick={() => {
@@ -296,6 +321,7 @@ export default function App() {
         onMouseDown={handleMouseDown}
         onMousemove={handleMouseMove}
         onMouseup={handleMouseUp}
+        ref={stageRef}
         style={{ backgroundColor: "rgb(128, 128, 128)" }}
       >
         <Layer>
