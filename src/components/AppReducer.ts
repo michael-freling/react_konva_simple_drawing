@@ -61,10 +61,20 @@ export enum ActionType {
   AddLayer = "add layer",
   SelectLayer = "select layer",
   DeleteSelectedLayers = "delete layer",
+  LoadFile = "load a file",
   ImportImage = "import image",
   MoveImageLayer = "move image layer",
   DrawOnCanvas = "draw on canvas",
 }
+
+export type Drawing = {
+  layers: LayerProps[];
+};
+
+export type LoadFileAction = {
+  type: ActionType.LoadFile;
+  contents: string;
+};
 
 export type ImportImageAction = {
   type: ActionType.ImportImage;
@@ -118,6 +128,7 @@ export type AppAction =
   | {
       type: ActionType.Redo;
     }
+  | LoadFileAction
   | ImportImageAction
   | AddLayerAction
   | SelectLayerAction
@@ -126,6 +137,7 @@ export type AppAction =
   | FreeDrawAction;
 
 export enum AppStatusCode {
+  LoadFileInvalidFileFormat = "LoadFileInvalidFileFormat",
   DeleteSelectedLayersNoLayer = "DeleteSelectedLayersNoLayer",
   MoveImageLayerInvalidLayerId = "MoveImageLayerInvalidLayerId",
   MoveImageLayerInvalidLayerType = "MoveImageLayerInvalidLayerType",
@@ -276,6 +288,34 @@ function deleteSelectedLayersReducer(
   });
 }
 
+function loadFileReducer(state: AppState, action: LoadFileAction): AppState {
+  try {
+    const jsonContents = JSON.parse(action.contents);
+    if (jsonContents.layers == null) {
+      return {
+        ...state,
+        statusCode: AppStatusCode.LoadFileInvalidFileFormat,
+      };
+    }
+    if (jsonContents.layers.length == null || jsonContents.layers.length == 0) {
+      return {
+        ...state,
+        statusCode: AppStatusCode.LoadFileInvalidFileFormat,
+      };
+    }
+
+    return addStateToHistory(state, {
+      layers: jsonContents.layers,
+      currentLayerIndex: 0,
+    });
+  } catch (error) {
+    return {
+      ...state,
+      statusCode: AppStatusCode.LoadFileInvalidFileFormat,
+    };
+  }
+}
+
 function importImageReducer(
   state: AppState,
   action: ImportImageAction
@@ -401,6 +441,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return selectLayerReducer(state, action);
 
     // need to undo and redo
+    case ActionType.LoadFile:
+      return loadFileReducer(state, action);
     case ActionType.ImportImage:
       return importImageReducer(state, action);
     case ActionType.AddLayer:

@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import App from "./App";
 import "@testing-library/jest-dom";
-import { Tool } from "./AppReducer";
+import { LayerType, Tool } from "./AppReducer";
 
 function undo(getByTestId: any) {
   const undoButton = getByTestId("undoButton");
@@ -107,6 +107,165 @@ describe("App", () => {
           // status message should be hidden after undo and redo
           expect(queryByTestId("statusMessage")).not.toBeInTheDocument();
         }
+      }
+    );
+  });
+
+  it.skip("save a file", () => {
+    // Skip this test case because of an error
+    // This is because document create an a element and click a link
+    // Error: Not implemented: navigation (except hash changes)
+    const { getByTestId } = render(<App />);
+    fireEvent.click(getByTestId("saveButton"));
+  });
+
+  describe("load a file", () => {
+    const createMockFileList = (files: File[]) => {
+      // @ts-ignore
+      const fileList: FileList = {
+        length: files.length,
+        item(index: number): File {
+          return fileList[index];
+        },
+      };
+      files.forEach((file, index) => (fileList[index] = file));
+      return fileList;
+    };
+
+    const initialLayerCount = 1;
+    const vectorLayer = {
+      id: "layer-1",
+      name: "Layer 1",
+      type: LayerType.Vector,
+      lines: [
+        { type: Tool.Pen, points: [0, 1, 2, 3, 4, 5] },
+        { type: Tool.Eraser, points: [10, 11, 12, 13, 14, 15] },
+      ],
+      isSelected: false,
+    };
+    const imageLayer = {
+      id: "layer-2",
+      name: "Layer 2",
+      type: LayerType.Image,
+      image: {
+        id: "image 10",
+        dataURL: "dataURL",
+        x: 100,
+        y: 101,
+      },
+      isSelected: false,
+    };
+    const testCases: {
+      name: string;
+      files: FileList;
+      expectedLayerCount: number;
+      expectedStatusMessage?: string;
+    }[] = [
+      {
+        name: "load every data",
+        files: createMockFileList([
+          new File(
+            [
+              JSON.stringify({
+                layers: [vectorLayer, imageLayer],
+              }),
+            ],
+            "test.json",
+            { type: "application/json" }
+          ),
+        ]),
+        expectedLayerCount: 2,
+      },
+      {
+        name: "empty a layer file",
+        files: createMockFileList([
+          new File([JSON.stringify({ layers: [] })], "test.json", {
+            type: "application/json",
+          }),
+        ]),
+        expectedLayerCount: initialLayerCount,
+      },
+      {
+        name: "invalid json file",
+        files: createMockFileList([
+          new File([JSON.stringify({ unknown: "format" })], "test.json", {
+            type: "application/json",
+          }),
+        ]),
+        expectedLayerCount: initialLayerCount,
+      },
+      {
+        name: "invalid file contents, but file format is json",
+        files: createMockFileList([
+          new File(["name,id\nJohn,1"], "test.csv", {
+            type: "application/json",
+          }),
+        ]),
+        expectedLayerCount: initialLayerCount,
+        expectedStatusMessage:
+          "Your file is not supported. Please load a file exported from this",
+      },
+      {
+        name: "invalid file type",
+        files: createMockFileList([
+          new File(["name,id\nJohn,1"], "test.csv", {
+            type: "text/csv",
+          }),
+        ]),
+        expectedLayerCount: initialLayerCount,
+      },
+      {
+        name: "no file was selected",
+        files: createMockFileList([]),
+        expectedLayerCount: initialLayerCount,
+      },
+      {
+        name: "multiple files were selected",
+        files: createMockFileList([
+          new File([JSON.stringify({ layers: [vectorLayer] })], "test.json", {
+            type: "application/json",
+          }),
+          new File([JSON.stringify({ layers: [imageLayer] })], "test2.json", {
+            type: "application/json",
+          }),
+        ]),
+        expectedLayerCount: initialLayerCount,
+      },
+    ];
+    test.each(testCases)(
+      "$name",
+      async ({ files, expectedLayerCount, expectedStatusMessage }) => {
+        const { getByTestId } = render(<App />);
+        const layerList = getByTestId("layerList");
+        expect(layerList.children).toHaveLength(initialLayerCount);
+
+        fireEvent.change(getByTestId("loadFile"), {
+          target: {
+            files,
+          },
+        });
+        await waitFor(() => {
+          expect(layerList.children).toHaveLength(expectedLayerCount);
+          if (expectedStatusMessage != null) {
+            expect(getByTestId("statusMessage")).toHaveTextContent(
+              expectedStatusMessage
+            );
+          }
+        });
+
+        undo(getByTestId);
+        await waitFor(() => {
+          expect(getByTestId("layerList").children).toHaveLength(
+            initialLayerCount
+          );
+        });
+
+        redo(getByTestId);
+        await waitFor(() => {
+          expect(getByTestId("layerList").children).toHaveLength(
+            expectedLayerCount
+          );
+        });
       }
     );
   });

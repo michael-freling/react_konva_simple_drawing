@@ -8,6 +8,7 @@ import {
   AppState,
   AppStatusCode,
   Color,
+  Drawing,
   ImageLayerProps,
   LayerType,
   MouseEventType,
@@ -34,6 +35,18 @@ class PromiseFileReader {
         reject(this.fileReader.error);
       };
       this.fileReader.readAsDataURL(file);
+    });
+  }
+
+  readAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      this.fileReader.onload = (e: ProgressEvent<FileReader>) => {
+        resolve(e.target!.result as string);
+      };
+      this.fileReader.onerror = (e: ProgressEvent<FileReader>) => {
+        reject(this.fileReader.error);
+      };
+      this.fileReader.readAsText(file);
     });
   }
 }
@@ -82,6 +95,7 @@ function ImageLayer({
 
   return (
     <Image
+      id={id}
       key={id}
       image={img}
       alt={"imageLayer-" + id}
@@ -108,6 +122,7 @@ export default function App() {
   const currentLayer = layers[state.currentLayerIndex];
 
   const stageRef = React.useRef<Konva.Stage>(null);
+  const loadFileRef = React.useRef<HTMLInputElement | null>(null);
   // Import
   // https://konvajs.org/docs/react/Images.html
   // https://stackoverflow.com/questions/37457128/react-open-file-browser-on-click-a-div
@@ -146,6 +161,61 @@ export default function App() {
       color: color,
       tool: tool,
       point,
+    });
+  };
+
+  const handleSave = () => {
+    const json: Drawing = {
+      layers: [],
+    };
+    const konvaLayer = stageRef.current!.getLayers()[0];
+
+    state.layers.forEach((layer) => {
+      switch (layer.type) {
+        case LayerType.Image:
+          const image = konvaLayer.find("#" + layer.id)[0];
+          const dataURL = image?.toDataURL();
+          json.layers.push({
+            ...layer,
+            isSelected: false,
+            image: {
+              ...layer.image,
+              dataURL,
+            },
+          });
+          break;
+        case LayerType.Vector:
+          json.layers.push({
+            ...layer,
+            isSelected: false,
+          });
+      }
+    });
+    var dataStr =
+      "data:text/json;charset=utf-8," +
+      encodeURIComponent(JSON.stringify(json));
+
+    downloadURI(dataStr, "stage.json");
+  };
+
+  const handleLoad = async (files: FileList) => {
+    if (files.length > 1) {
+      return;
+    }
+    if (files.length === 0) {
+      return;
+    }
+
+    const file = files[0];
+    if (!file.type.includes("json")) {
+      return;
+    }
+
+    const reader = new PromiseFileReader();
+    const contents = await reader.readAsText(file);
+    dispatch({
+      type: ActionType.LoadFile,
+      contents,
     });
   };
 
@@ -188,13 +258,18 @@ export default function App() {
   switch (state.statusCode) {
     case AppStatusCode.DeleteSelectedLayersNoLayer:
       statusMessage = "Please keep at least one layer";
+      break;
+    case AppStatusCode.LoadFileInvalidFileFormat:
+      statusMessage =
+        "Your file is not supported. Please load a file exported from this";
+      break;
   }
 
   return (
     <div>
       <input
         type="file"
-        id="file"
+        id="importImageFile"
         ref={importFileRef}
         style={{ display: "none" }}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
@@ -202,11 +277,36 @@ export default function App() {
         }}
         data-testid="importImageFile"
       />
+      <input
+        type="file"
+        id="loadFile"
+        ref={loadFileRef}
+        style={{ display: "none" }}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+          handleLoad(e.target.files!);
+        }}
+        data-testid="loadFile"
+      />
       {statusMessage != null && (
         <span data-testid="statusMessage">{statusMessage}</span>
       )}
 
       <ul style={{ display: "inline-block" }}>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button onClick={handleSave} data-testid="saveButton">
+            Save
+          </button>
+        </li>
+        <li style={{ display: "inline", padding: 2 }}>
+          <button
+            onClick={() => {
+              loadFileRef.current!.click();
+            }}
+            data-testid="loadButton"
+          >
+            Load
+          </button>
+        </li>
         <li style={{ display: "inline", padding: 2 }}>
           <button onClick={handleExportImage} data-testid="exportImageButton">
             Export an image
