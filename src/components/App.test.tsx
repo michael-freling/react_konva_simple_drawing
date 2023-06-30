@@ -344,4 +344,17 @@ describe("App", () => {
     const undoButton = undo(getByTestId);
     expect(undoButton).toBeInTheDocument();
   });
+
+  it("color change", () => {
+    const { getByTestId } = render(<App />);
+
+    const colorInput = getByTestId("colorInput");
+    expect(colorInput).toHaveValue("#00ff00");
+    fireEvent.change(colorInput, {
+      target: {
+        value: "#ffffff",
+      },
+    });
+    expect(colorInput).toHaveValue("#ffffff");
+  });
 });

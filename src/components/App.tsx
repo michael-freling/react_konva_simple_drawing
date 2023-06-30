@@ -129,7 +129,7 @@ export default function App() {
   const importFileRef = React.useRef<HTMLInputElement | null>(null);
 
   const [tool, setTool] = React.useState(Tool.Pen);
-  const [color] = React.useState<Color>("#00ff00");
+  const [color, setColor] = React.useState<Color>("#00ff00");
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const point = e.target.getStage()!.getPointerPosition()!;
@@ -321,6 +321,17 @@ export default function App() {
           >
             Import an image
           </button>
+        </li>
+        <li style={{ display: "inline", padding: 2 }}>
+          <input
+            type="color"
+            value={color}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+              const colorCode = event.target.value;
+              setColor(colorCode);
+            }}
+            data-testid="colorInput"
+          />
         </li>
         <li style={{ display: "inline", padding: 2 }}>
           <select
