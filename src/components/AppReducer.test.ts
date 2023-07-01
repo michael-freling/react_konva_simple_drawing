@@ -9,6 +9,7 @@ import {
   LayerType,
   MouseEventType,
   MoveImageLayerAction,
+  RasterLayerProps,
   SelectLayerAction,
   Tool,
   VectorLayerProps,
@@ -196,12 +197,18 @@ describe("AppReducer actions", () => {
   });
 
   describe(ActionType.AddLayer.toString(), () => {
-    const nextLayer: VectorLayerProps = {
+    const nextVectorLayer: VectorLayerProps = {
       id: "layer-2",
       name: "Layer 2",
       type: LayerType.Vector,
       isSelected: false,
       lines: [],
+    };
+    const nextRasterLayer: RasterLayerProps = {
+      id: "layer-2",
+      name: "Layer 2",
+      type: LayerType.Raster,
+      isSelected: false,
     };
 
     const testCases: {
@@ -218,7 +225,18 @@ describe("AppReducer actions", () => {
         },
         expected: createState({
           state: initialState,
-          layers: [...initialState.layers, nextLayer],
+          layers: [...initialState.layers, nextVectorLayer],
+        }),
+      },
+      {
+        name: "add a raster layer",
+        state: initialState,
+        actionPayload: {
+          layerType: LayerType.Raster,
+        },
+        expected: createState({
+          state: initialState,
+          layers: [...initialState.layers, nextRasterLayer],
         }),
       },
       {

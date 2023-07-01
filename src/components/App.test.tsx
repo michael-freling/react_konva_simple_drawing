@@ -31,6 +31,21 @@ describe("App", () => {
     expect(layerList.children).toHaveLength(2);
   });
 
+  it("add a raster layer", () => {
+    const { getByTestId } = render(<App />);
+    const layerList = getByTestId("layerList");
+    expect(layerList.children).toHaveLength(1);
+
+    fireEvent.click(getByTestId("addRasterLayerButton"));
+    expect(layerList.children).toHaveLength(2);
+
+    // test undo and redo
+    undo(getByTestId);
+    expect(layerList.children).toHaveLength(1);
+    redo(getByTestId);
+    expect(layerList.children).toHaveLength(2);
+  });
+
   describe("delete selected layers", () => {
     test.each([
       {

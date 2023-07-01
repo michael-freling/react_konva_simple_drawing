@@ -386,6 +386,19 @@ export default function App() {
           <button
             onClick={() => {
               dispatch({
+                type: ActionType.AddLayer,
+                layerType: LayerType.Raster,
+              });
+            }}
+            data-testid="addRasterLayerButton"
+          >
+            Add a raster layer
+          </button>
+        </li>
+        <li style={{ display: "inline-block" }}>
+          <button
+            onClick={() => {
+              dispatch({
                 type: ActionType.DeleteSelectedLayers,
               });
             }}

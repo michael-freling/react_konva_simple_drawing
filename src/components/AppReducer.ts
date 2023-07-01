@@ -10,6 +10,7 @@ export enum Tool {
 
 export enum LayerType {
   Vector = "vector",
+  Raster = "raster",
   Image = "image",
 }
 
@@ -25,6 +26,10 @@ export type VectorLayerProps = BaseLayerProps & {
   lines: FreeDrawLine[];
 };
 
+export type RasterLayerProps = BaseLayerProps & {
+  type: LayerType.Raster;
+};
+
 export type ImageLayerProps = BaseLayerProps & {
   type: LayerType.Image;
   image: {
@@ -35,7 +40,7 @@ export type ImageLayerProps = BaseLayerProps & {
   };
 };
 
-export type LayerProps = VectorLayerProps | ImageLayerProps;
+export type LayerProps = VectorLayerProps | RasterLayerProps | ImageLayerProps;
 
 type FreeDrawLine = {
   tool: Tool;
@@ -217,6 +222,11 @@ export function createLayer(
         lines: [],
         ...props,
       } as VectorLayerProps;
+    case LayerType.Raster:
+      return {
+        ...defaultProps,
+        ...props,
+      };
     case LayerType.Image:
       return {
         ...defaultProps,
