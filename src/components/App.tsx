@@ -319,6 +319,12 @@ export default function App() {
       break;
   }
 
+  const listStyle = {
+    display: "inline",
+    paddingLeft: 8,
+    paddingRight: 8,
+    borderRight: "1px solid black",
+  };
   return (
     <div>
       <input
@@ -342,16 +348,18 @@ export default function App() {
         data-testid="loadFile"
       />
       {statusMessage != null && (
-        <span data-testid="statusMessage">{statusMessage}</span>
+        <span data-testid="statusMessage" style={{ color: "red" }}>
+          {statusMessage}
+        </span>
       )}
 
-      <ul style={{ display: "inline-block" }}>
-        <li style={{ display: "inline", padding: 2 }}>
+      <ul style={{ padding: 2, border: "1px solid black" }}>
+        <li style={listStyle}>
           <button onClick={handleSave} data-testid="saveButton">
             Save
           </button>
         </li>
-        <li style={{ display: "inline", padding: 2 }}>
+        <li style={listStyle}>
           <button
             onClick={() => {
               loadFileRef.current!.click();
@@ -361,12 +369,12 @@ export default function App() {
             Load
           </button>
         </li>
-        <li style={{ display: "inline", padding: 2 }}>
+        <li style={listStyle}>
           <button onClick={handleExportImage} data-testid="exportImageButton">
             Export an image
           </button>
         </li>
-        <li style={{ display: "inline", padding: 2 }}>
+        <li style={listStyle}>
           <button
             onClick={() => {
               importFileRef.current?.click();
@@ -376,7 +384,30 @@ export default function App() {
             Import an image
           </button>
         </li>
-        <li style={{ display: "inline", padding: 2 }}>
+        <li style={listStyle}>
+          <button
+            onClick={() => {
+              dispatch({ type: ActionType.Undo });
+            }}
+            data-testid="undoButton"
+          >
+            undo
+          </button>
+        </li>
+        <li style={listStyle}>
+          <button
+            onClick={() => {
+              dispatch({ type: ActionType.Redo });
+            }}
+            data-testid="redoButton"
+          >
+            redo
+          </button>
+        </li>
+      </ul>
+
+      <ul style={{ padding: 2 }}>
+        <li style={listStyle}>
           <input
             type="color"
             value={color}
@@ -387,7 +418,7 @@ export default function App() {
             data-testid="colorInput"
           />
         </li>
-        <li style={{ display: "inline", padding: 2 }}>
+        <li style={listStyle}>
           <select
             value={tool}
             onChange={(e) => {
@@ -401,30 +432,10 @@ export default function App() {
             <option value={Tool.Move}>Move a layer</option>
           </select>
         </li>
-        <li style={{ display: "inline", padding: 2 }}>
-          <button
-            onClick={() => {
-              dispatch({ type: ActionType.Undo });
-            }}
-            data-testid="undoButton"
-          >
-            undo
-          </button>
-        </li>
-        <li style={{ display: "inline", padding: 2 }}>
-          <button
-            onClick={() => {
-              dispatch({ type: ActionType.Redo });
-            }}
-            data-testid="redoButton"
-          >
-            redo
-          </button>
-        </li>
       </ul>
 
-      <ul style={{ display: "block" }}>
-        <li style={{ display: "inline-block" }}>
+      <ul style={{ display: "block", border: "1px solid black", padding: 2 }}>
+        <li style={listStyle}>
           <button
             onClick={() => {
               dispatch({
@@ -437,7 +448,7 @@ export default function App() {
             Add a vector layer
           </button>
         </li>
-        <li style={{ display: "inline-block" }}>
+        <li style={listStyle}>
           <button
             onClick={() => {
               dispatch({
@@ -450,7 +461,7 @@ export default function App() {
             Add a raster layer
           </button>
         </li>
-        <li style={{ display: "inline-block" }}>
+        <li style={listStyle}>
           <button
             onClick={() => {
               dispatch({
@@ -464,10 +475,19 @@ export default function App() {
         </li>
       </ul>
 
-      <ul style={{ padding: 2 }} data-testid="layerList">
+      <ul
+        style={{ borderBottom: "1px solid black", padding: 2 }}
+        data-testid="layerList"
+      >
         {layers.map((layer, index) => {
           return (
-            <li key={layer.id} style={{ padding: 2 }}>
+            <li
+              key={layer.id}
+              style={{
+                ...listStyle,
+                borderRight: "1px solid black",
+              }}
+            >
               <input
                 data-testid={"layerCheckbox" + index}
                 type="checkbox"
@@ -504,7 +524,6 @@ export default function App() {
         style={{ backgroundColor: "rgb(128, 128, 128)" }}
       >
         <Layer>
-          <Text text="Just start drawing" x={5} y={30} />
           {layers.map((layer, index) => {
             switch (layer.type) {
               case LayerType.Vector:

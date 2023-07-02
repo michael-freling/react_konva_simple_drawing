@@ -1,6 +1,6 @@
 # React Konva Simple Free Drawing
 
-![CI test](https://github.com/michael-freling/simple_drawing/actions/workflows/test.yml/badge.svg)
+![CI test](https://github.com/michael-freling/react_konva_simple_drawing/actions/workflows/test.yml/badge.svg)
 
 This is a simple drawing tool built by next.js and [react-konva](https://konvajs.org/docs/react/index.html).
 
@@ -18,7 +18,7 @@ This tool contains these features
 - [Save](https://konvajs.org/docs/data_and_serialization/Best_Practices.html)
   - Save a file as JSON
 
-## Getting Started
+## Development
 
 First, run the development server:
 
