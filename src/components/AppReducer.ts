@@ -1,9 +1,9 @@
+import { Color } from "./Color";
 import { AtLeast, assert } from "./util";
-
-export type Color = string;
 
 export enum Tool {
   Pen = "pen",
+  Fill = "fill",
   Eraser = "eraser",
   Move = "Move",
 }
@@ -28,6 +28,10 @@ export type VectorLayerProps = BaseLayerProps & {
 
 export type RasterLayerProps = BaseLayerProps & {
   type: LayerType.Raster;
+  canvasImage?: HTMLImageElement;
+  image?: {
+    dataURL: string;
+  };
 };
 
 export type ImageLayerProps = BaseLayerProps & {
@@ -70,10 +74,16 @@ export enum ActionType {
   ImportImage = "import image",
   MoveImageLayer = "move image layer",
   DrawOnCanvas = "draw on canvas",
+  FillColor = "fill a color",
 }
 
-export type Drawing = {
-  layers: LayerProps[];
+export type LayerInFile =
+  | Omit<VectorLayerProps, "isSelected">
+  | Omit<ImageLayerProps, "isSelected">
+  | Omit<RasterLayerProps, "isSelected" | "canvasImage">;
+
+export type DrawingFile = {
+  layers: LayerInFile[];
 };
 
 export type LoadFileAction = {
@@ -104,6 +114,7 @@ export type SelectLayerAction = {
   type: ActionType.SelectLayer;
   layerId: string;
 };
+
 type DeleteSelectedLayersAction = {
   type: ActionType.DeleteSelectedLayers;
 };
@@ -126,6 +137,11 @@ export type FreeDrawAction = {
   };
 };
 
+export type FillColorAction = {
+  type: ActionType.FillColor;
+  image: HTMLImageElement;
+};
+
 export type AppAction =
   | {
       type: ActionType.Undo;
@@ -139,7 +155,8 @@ export type AppAction =
   | SelectLayerAction
   | DeleteSelectedLayersAction
   | MoveImageLayerAction
-  | FreeDrawAction;
+  | FreeDrawAction
+  | FillColorAction;
 
 export enum AppStatusCode {
   LoadFileInvalidFileFormat = "LoadFileInvalidFileFormat",
@@ -375,6 +392,13 @@ function moveImageLayerReducer(
   });
 }
 
+function fillColorReducer(state: AppState, action: FillColorAction): AppState {
+  let newState = JSON.parse(JSON.stringify(state));
+  const currentLayer = newState.layers[newState.currentLayerIndex];
+  currentLayer.canvasImage = action.image;
+  return addStateToHistory(state, newState);
+}
+
 function drawReducer(state: AppState, action: FreeDrawAction): AppState {
   // TODO: improve performance
   let newState = JSON.parse(JSON.stringify(state));
@@ -424,6 +448,9 @@ function drawReducer(state: AppState, action: FreeDrawAction): AppState {
           return newState;
       }
 
+    case Tool.Fill:
+      return state;
+
     case Tool.Move:
       // TODO
       switch (action.mouseEventType) {
@@ -463,6 +490,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return moveImageLayerReducer(state, action);
     case ActionType.DrawOnCanvas:
       return drawReducer(state, action);
+    case ActionType.FillColor:
+      return fillColorReducer(state, action);
   }
 }
 

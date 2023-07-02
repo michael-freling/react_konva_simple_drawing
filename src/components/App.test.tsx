@@ -364,7 +364,7 @@ describe("App", () => {
     const { getByTestId } = render(<App />);
 
     const colorInput = getByTestId("colorInput");
-    expect(colorInput).toHaveValue("#00ff00");
+    expect(colorInput).toHaveValue("#000000");
     fireEvent.change(colorInput, {
       target: {
         value: "#ffffff",

@@ -7,17 +7,19 @@ import {
   AppAction,
   AppState,
   AppStatusCode,
-  Color,
-  Drawing,
+  DrawingFile,
   ImageLayerProps,
   LayerType,
   MouseEventType,
+  RasterLayerProps,
   Tool,
   VectorLayerProps,
   appReducer,
   createLayer,
   initialState,
 } from "./AppReducer";
+import { Color } from "./Color";
+import AppCanvas from "./AppCanvas";
 
 class PromiseFileReader {
   fileReader: FileReader;
@@ -82,6 +84,20 @@ function VectorLayer({ id, lines }: VectorLayerProps) {
   );
 }
 
+function RasterLayer({ id, canvasImage, image }: RasterLayerProps) {
+  const [usedImage] = useImage(image != null ? image.dataURL : "");
+
+  let img = canvasImage;
+  if (image != null) {
+    img = usedImage;
+  }
+  return (
+    <Group key={id} id={id}>
+      {img && <Image alt={id} image={img} />}
+    </Group>
+  );
+}
+
 function ImageLayer({
   id,
   draggable,
@@ -129,15 +145,36 @@ export default function App() {
   const importFileRef = React.useRef<HTMLInputElement | null>(null);
 
   const [tool, setTool] = React.useState(Tool.Pen);
-  const [color, setColor] = React.useState<Color>("#00ff00");
+  const [color, setColor] = React.useState<Color>("#000000");
 
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     const point = e.target.getStage()!.getPointerPosition()!;
+    if (tool === Tool.Fill) {
+      if (currentLayer.type === LayerType.Raster) {
+        // TODO: Get all canvas from all layers, not only the current layer
+        const canvas = stageRef.current!.toCanvas();
+        const imageData = AppCanvas.fill(canvas, point.x, point.y, color);
+        // Create a new canvas element with the filled imageData
+        const filledCanvas = document.createElement("canvas");
+        filledCanvas.width = canvas.width;
+        filledCanvas.height = canvas.height;
+        filledCanvas.getContext("2d")!.putImageData(imageData, 0, 0);
+
+        const filledImage = new window.Image();
+        filledImage.src = filledCanvas.toDataURL();
+        dispatch({
+          type: ActionType.FillColor,
+          image: filledImage,
+        });
+      }
+      return;
+    }
+
     dispatch({
       type: ActionType.DrawOnCanvas,
       mouseEventType: MouseEventType.Down,
-      color: color,
-      tool: tool,
+      color,
+      tool,
       point,
     });
   };
@@ -165,7 +202,7 @@ export default function App() {
   };
 
   const handleSave = () => {
-    const json: Drawing = {
+    const json: DrawingFile = {
       layers: [],
     };
     const konvaLayer = stageRef.current!.getLayers()[0];
@@ -175,20 +212,37 @@ export default function App() {
         case LayerType.Image:
           const image = konvaLayer.find("#" + layer.id)[0];
           const dataURL = image?.toDataURL();
-          json.layers.push({
+          const { isSelected, ...newLayer } = {
             ...layer,
-            isSelected: false,
             image: {
               ...layer.image,
               dataURL,
             },
-          });
+          };
+          json.layers.push(newLayer);
           break;
         case LayerType.Vector:
-          json.layers.push({
-            ...layer,
-            isSelected: false,
-          });
+          {
+            const { isSelected, ...newLayer } = {
+              ...layer,
+            };
+            json.layers.push(newLayer);
+          }
+          break;
+        case LayerType.Raster:
+          {
+            const { isSelected, canvasImage, ...newLayer } = {
+              ...layer,
+            };
+            if (canvasImage != null) {
+              const konvaImage = konvaLayer.find("#" + layer.id)[0];
+              newLayer.image = {
+                dataURL: konvaImage.toDataURL(),
+              };
+            }
+            json.layers.push(newLayer);
+          }
+          break;
       }
     });
     var dataStr =
@@ -342,6 +396,7 @@ export default function App() {
             data-testid="toolSelect"
           >
             <option value={Tool.Pen}>Pen</option>
+            <option value={Tool.Fill}>Fill</option>
             <option value={Tool.Eraser}>Eraser</option>
             <option value={Tool.Move}>Move a layer</option>
           </select>
@@ -457,6 +512,13 @@ export default function App() {
                   <VectorLayer
                     key={layer.id}
                     {...(layer as VectorLayerProps)}
+                  />
+                );
+              case LayerType.Raster:
+                return (
+                  <RasterLayer
+                    key={layer.id}
+                    {...(layer as RasterLayerProps)}
                   />
                 );
               case LayerType.Image:
